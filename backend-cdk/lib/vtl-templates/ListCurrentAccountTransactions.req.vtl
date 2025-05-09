@@ -1,0 +1,15 @@
+#set( $limit = $util.defaultIfNull($context.args.limit, 20) )
+        #set( $owner = $context.identity.sub )
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "index": "byOwner",
+          "query": {
+            "expression": "#owner = :owner",
+            "expressionNames": { "#owner": "owner" },
+            "expressionValues": { ":owner": $util.dynamodb.toDynamoDBJson($owner) }
+          },
+          "limit": $limit,
+          "nextToken": $util.toJson($context.args.nextToken)
+          ## TODO: Add filter expression logic using $context.args.filter here ##
+        }

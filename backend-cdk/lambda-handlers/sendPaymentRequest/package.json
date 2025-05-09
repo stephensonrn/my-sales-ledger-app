@@ -1,0 +1,20 @@
+{
+  "name": "sendpaymentrequest",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.799.0",
+    "@aws-sdk/client-dynamodb": "^3.799.0",
+    "@aws-sdk/client-ses": "^3.797.0",
+    "@aws-sdk/lib-dynamodb": "^3.799.0",
+    "ulid": "^3.0.0"
+  }
+}

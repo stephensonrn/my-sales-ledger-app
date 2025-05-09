@@ -1,0 +1,59 @@
+# Node.js / npm / yarn / pnpm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json # Optional: some teams commit this, others don't. If you do, remove this line.
+                  # For consistency in builds (like Amplify Hosting), committing it is often good.
+
+# Build output folders
+dist/
+build/
+coverage/
+lcov-report/
+
+# AWS CDK
+cdk.out/
+cdk.context.json
+*.bak # CDK asset staging backup files
+
+# Vite specific
+.vite/
+*.vite.js.map
+
+# TypeScript compilation output (if you compile manually sometimes, though Vite handles its own)
+*.js # If your source is .ts and you compile to .js in the same dir (not typical for Vite)
+*.js.map # For corresponding .js files
+# Be careful with the above *.js, ensure it doesn't ignore essential JS files if you have any.
+# If all your source code is .ts/.tsx, then ignoring *.js in src/ might be safer.
+# For Lambda handlers built with NodejsFunction, the .js output is usually within cdk.out or assets.
+
+# Lambda handler specific node_modules (if you have separate package.json in each handler folder)
+lambda-handlers/**/node_modules/
+lambda-handlers/**/*.zip # If you manually zip them
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example # Exclamation mark means DO NOT ignore .env.example
+
+# OS generated files
+.DS_Store
+Thumbs.db
+._*
+
+# IDE / Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*~
