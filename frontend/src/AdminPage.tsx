@@ -112,7 +112,7 @@ function AdminPage() {
                   return (
                     // Use standard tr, apply style conditionally
                     <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
-                      <td style={thTdStyle}>{user.username}</td> {/* Use standard td */}
+                      <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
                       <td style={thTdStyle}>{getUserAttribute(user, 'custom:company_name') ?? '-'}</td>
                       <td style={thTdStyle}><Badge variation={user.enabled ? 'success' : 'info'}>{user.status}</Badge></td> {/* Keep Amplify Badge */}
                       <td style={thTdStyle}><code>{user.sub}</code></td> {/* Use standard code */}

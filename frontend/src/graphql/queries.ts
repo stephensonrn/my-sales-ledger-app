@@ -143,6 +143,10 @@ export const adminListUsers = /* GraphQL */ `query AdminListUsers($limit: Int, $
       enabled
       createdAt
       updatedAt
+	  attributes {
+  name
+  value
+}
       __typename
     }
     nextToken
