@@ -1,0 +1,3 @@
+mutation SendPaymentRequestEmail($amount: Float!) {
+  sendPaymentRequestEmail(amount: $amount)
+}

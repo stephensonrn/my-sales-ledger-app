@@ -1,0 +1,12 @@
+mutation AdminAddCashReceipt($targetOwnerId: String!, $amount: Float!, $description: String) {
+  adminAddCashReceipt(targetOwnerId: $targetOwnerId, amount: $amount, description: $description) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

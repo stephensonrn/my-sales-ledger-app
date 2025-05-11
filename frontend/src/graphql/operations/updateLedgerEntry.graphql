@@ -1,0 +1,12 @@
+mutation UpdateLedgerEntry($input: UpdateLedgerEntryInput!) {
+  updateLedgerEntry(input: $input) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

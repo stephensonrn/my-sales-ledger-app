@@ -1,0 +1,12 @@
+query GetCurrentAccountTransaction($id: ID!) {
+  getCurrentAccountTransaction(id: $id) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

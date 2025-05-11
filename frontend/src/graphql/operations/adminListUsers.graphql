@@ -1,0 +1,19 @@
+query AdminListUsers($limit: Int, $nextToken: String) {
+  adminListUsers(limit: $limit, nextToken: $nextToken) {
+    users {
+      username
+      sub
+      status
+      enabled
+      createdAt
+      updatedAt
+      attributes {
+        name
+        value
+      }
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}

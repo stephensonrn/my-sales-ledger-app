@@ -1,0 +1,12 @@
+subscription OnCreateLedgerEntry($owner: String) {
+  onCreateLedgerEntry(owner: $owner) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

@@ -1,0 +1,10 @@
+mutation AdminCreateAccountStatus($ownerId: String!, $initialUnapprovedInvoiceValue: Float) {
+  adminCreateAccountStatus(ownerId: $ownerId, initialUnapprovedInvoiceValue: $initialUnapprovedInvoiceValue) {
+    id
+    owner
+    totalUnapprovedInvoiceValue
+    createdAt
+    updatedAt
+    __typename
+  }
+}

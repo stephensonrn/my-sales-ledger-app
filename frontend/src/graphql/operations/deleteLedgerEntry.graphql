@@ -1,0 +1,12 @@
+mutation DeleteLedgerEntry($id: ID!) {
+  deleteLedgerEntry(id: $id) {
+    id # Usually returns the deleted item or just its ID
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

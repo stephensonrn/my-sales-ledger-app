@@ -1,0 +1,14 @@
+query ListAccountStatuses($owner: String, $filter: AccountStatusFilterInput, $limit: Int, $nextToken: String) {
+  listAccountStatuses(owner: $owner, filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+      owner
+      totalUnapprovedInvoiceValue
+      createdAt
+      updatedAt
+      __typename
+    }
+    nextToken
+    __typename
+  }
+}

@@ -1,0 +1,10 @@
+mutation UpdateAccountStatus($input: UpdateAccountStatusInput!) {
+  updateAccountStatus(input: $input) {
+    id
+    owner
+    totalUnapprovedInvoiceValue
+    createdAt
+    updatedAt
+    __typename
+  }
+}

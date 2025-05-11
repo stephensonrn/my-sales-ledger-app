@@ -1,0 +1,12 @@
+mutation CreateLedgerEntry($input: CreateLedgerEntryInput!) {
+  createLedgerEntry(input: $input) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}

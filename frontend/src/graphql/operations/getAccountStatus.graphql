@@ -1,0 +1,10 @@
+query GetAccountStatus($id: ID!) {
+  getAccountStatus(id: $id) {
+    id
+    owner
+    totalUnapprovedInvoiceValue
+    createdAt
+    updatedAt
+    __typename
+  }
+}

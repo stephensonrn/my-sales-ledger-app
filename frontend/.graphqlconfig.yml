@@ -1,21 +1,21 @@
+# frontend/.graphqlconfig.yml
 projects:
-  Codegen Project:
-    schemaPath: schema.json
-    includes:
-      - src/graphql/**/*.ts
+  "Codegen Project": # Or MySalesLedgerAPI, ensure this key matches your project setup if it matters
+    schemaPath: "schema.json" # Points to the file you just manually corrected
+    includes: []
     excludes:
-      - ./amplify/**
-      - src/API.ts
+      - "./amplify/**"
+      - "src/API.ts"
     extensions:
       amplify:
-        codeGenTarget: typescript
-        generatedFileName: src/API.ts
-        docsFilePath: src/graphql
-        region: eu-west-1
-        apiId: mglrg2nkw5dereoh7q3cyuv65m
-        frontend: javascript
-        framework: react
-        maxDepth: 2
+        codeGenTarget: "typescript"
+        generatedFileName: "src/API.ts"
+        docsFilePath: "src/graphql" # Let's try generating operations too
+        region: "eu-west-1"
+        apiId: "mglrg2nkw5dereoh7q3cyuv65m"
+        frontend: "javascript"
+        framework: "react"
+        maxDepth: 3 # Increased depth
 extensions:
   amplify:
     version: 3
