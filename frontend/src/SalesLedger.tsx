@@ -83,6 +83,7 @@ function SalesLedger() {
   // but for now, defining them here is fine as their dependencies are primarily 'userId' for the queries.
 
   const fetchInitialEntries = async () => {
+	  console.log("Attempting to fetchInitialEntries. Current userId:", userId); // <<< ADD THIS
     if (!userId) { setLoadingEntries(false); setEntries([]); return; }
     setLoadingEntries(true); setError(null);
     try {
@@ -117,6 +118,7 @@ function SalesLedger() {
   };
 
   const fetchInitialTransactions = async () => {
+	  console.log("Attempting to fetchInitialTransactions. Current userId:", userId); // <<< ADD THIS
     if (!userId) { setLoadingTransactions(false); setCurrentAccountTransactions([]); return; }
     setLoadingTransactions(true); setError(null);
     try {
@@ -135,10 +137,13 @@ function SalesLedger() {
 
 
   useEffect(() => {
+	  console.log("User ID Effect triggered. Current userId:", userId); // <<< ADD THIS
     if (userId) {
       fetchInitialEntries();
       fetchInitialStatus();
       fetchInitialTransactions();
+	  } else {
+	  console.log("User ID is null/undefined in effect, skipping initial fetches."); // <<< ADD THIS
     }
   }, [userId]); // Removed individual fetch functions from here to avoid direct call in this effect
 
