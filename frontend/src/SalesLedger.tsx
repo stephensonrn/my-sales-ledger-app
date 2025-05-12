@@ -1,5 +1,5 @@
 // src/SalesLedger.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback for completeness if needed, though not strictly used for the fix
 import { generateClient } from 'aws-amplify/api';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
@@ -20,7 +20,7 @@ import type {
   CurrentAccountTransaction,
   CreateLedgerEntryInput,
   LedgerEntryType,
-  CurrentAccountTransactionType,
+//   CurrentAccountTransactionType, // This was in your original, but not used in the provided snippet. Keep if used elsewhere.
   OnCreateLedgerEntrySubscription,
   OnCreateLedgerEntrySubscriptionVariables, // Verify if this exact name is generated
   ListLedgerEntriesQuery,
@@ -55,8 +55,8 @@ function SalesLedger() {
 
   const [grossAvailability, setGrossAvailability] = useState(0);
   const [netAvailability, setNetAvailability] = useState(0);
-  const [grossAvailTemp, setGrossAvailTemp] = useState(0);
-  const [netAvailTemp, setNetAvailTemp] = useState(0);
+  const [grossAvailTemp, setGrossAvailTemp] = useState(0); // Intermediate state for calculation
+  const [netAvailTemp, setNetAvailTemp] = useState(0);     // Intermediate state for calculation
 
   const [paymentRequestLoading, setPaymentRequestLoading] = useState(false);
   const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
@@ -73,92 +73,98 @@ function SalesLedger() {
       } catch (err) {
         console.error("SalesLedger: Error fetching user details:", err);
         setUserId(null);
-        setError("Could not retrieve user session.");
+        setError("Could not retrieve user session. Please ensure you are logged in.");
       }
     };
     fetchUserId();
   }, []);
 
-  useEffect(() => {
+  // Define fetch functions - these might be memoized with useCallback if dependencies become complex,
+  // but for now, defining them here is fine as their dependencies are primarily 'userId' for the queries.
+
+  const fetchInitialEntries = async () => {
     if (!userId) { setLoadingEntries(false); setEntries([]); return; }
-    const fetchInitialEntries = async () => {
-      setLoadingEntries(true); setError(null);
-      try {
-        const response = await client.graphql<ListLedgerEntriesQuery>({
-          query: ListLedgerEntriesDocument,
-          variables: { filter: { owner: { eq: userId } } },
-          authMode: 'userPool'
-        });
-        const items = response.data?.listLedgerEntries?.items?.filter(item => item !== null) as LedgerEntry[] || [];
-        setEntries(items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-      } catch (err: any) {
-        const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
-        setError(`Ledger history error: ${errorMessages}`); setEntries([]);
-      } finally { setLoadingEntries(false); }
-    };
-    fetchInitialEntries();
-  }, [userId]);
+    setLoadingEntries(true); setError(null);
+    try {
+      const response = await client.graphql<ListLedgerEntriesQuery>({
+        query: ListLedgerEntriesDocument,
+        variables: { filter: { owner: { eq: userId } } },
+        authMode: 'userPool'
+      });
+      const items = response.data?.listLedgerEntries?.items?.filter(item => item !== null) as LedgerEntry[] || [];
+      setEntries(items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    } catch (err: any) {
+      const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
+      setError(`Ledger history error: ${errorMessages}`); setEntries([]);
+    } finally { setLoadingEntries(false); }
+  };
 
-  useEffect(() => {
+  const fetchInitialStatus = async () => {
     if (!userId) { setLoadingStatus(false); setAccountStatus(null); return; }
-    const fetchInitialStatus = async () => {
-      setLoadingStatus(true); setError(null);
-      try {
-        const response = await client.graphql<ListAccountStatusesQuery>({
-          query: ListAccountStatusesDocument,
-          variables: { filter: { owner: { eq: userId } }, limit: 1 },
-          authMode: 'userPool'
-        });
-        const items = response.data?.listAccountStatuses?.items?.filter(item => item !== null) as AccountStatus[] || [];
-        setAccountStatus(items.length > 0 ? items[0] : null);
-      } catch (err: any) {
-        const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
-        setError(`Account status error: ${errorMessages}`); setAccountStatus(null);
-      } finally { setLoadingStatus(false); }
-    };
-    fetchInitialStatus();
-  }, [userId]);
+    setLoadingStatus(true); setError(null);
+    try {
+      const response = await client.graphql<ListAccountStatusesQuery>({
+        query: ListAccountStatusesDocument,
+        variables: { filter: { owner: { eq: userId } }, limit: 1 },
+        authMode: 'userPool'
+      });
+      const items = response.data?.listAccountStatuses?.items?.filter(item => item !== null) as AccountStatus[] || [];
+      setAccountStatus(items.length > 0 ? items[0] : null);
+    } catch (err: any) {
+      const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
+      setError(`Account status error: ${errorMessages}`); setAccountStatus(null);
+    } finally { setLoadingStatus(false); }
+  };
+
+  const fetchInitialTransactions = async () => {
+    if (!userId) { setLoadingTransactions(false); setCurrentAccountTransactions([]); return; }
+    setLoadingTransactions(true); setError(null);
+    try {
+      const response = await client.graphql<ListCurrentAccountTransactionsQuery>({
+        query: ListCurrentAccountTransactionsDocument,
+        variables: { filter: { owner: { eq: userId } } },
+        authMode: 'userPool'
+      });
+      const items = response.data?.listCurrentAccountTransactions?.items?.filter(item => item !== null) as CurrentAccountTransaction[] || [];
+      setCurrentAccountTransactions(items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    } catch (err: any) {
+      const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
+      setError(`Account transaction error: ${errorMessages}`); setCurrentAccountTransactions([]);
+    } finally { setLoadingTransactions(false); }
+  };
+
 
   useEffect(() => {
-    if (!userId) { setLoadingTransactions(false); setCurrentAccountTransactions([]); return; }
-    const fetchInitialTransactions = async () => {
-      setLoadingTransactions(true); setError(null);
-      try {
-        const response = await client.graphql<ListCurrentAccountTransactionsQuery>({
-          query: ListCurrentAccountTransactionsDocument,
-          variables: { filter: { owner: { eq: userId } } },
-          authMode: 'userPool'
-        });
-        const items = response.data?.listCurrentAccountTransactions?.items?.filter(item => item !== null) as CurrentAccountTransaction[] || [];
-        setCurrentAccountTransactions(items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-      } catch (err: any) {
-        const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error';
-        setError(`Account transaction error: ${errorMessages}`); setCurrentAccountTransactions([]);
-      } finally { setLoadingTransactions(false); }
-    };
-    fetchInitialTransactions();
-  }, [userId]);
+    if (userId) {
+      fetchInitialEntries();
+      fetchInitialStatus();
+      fetchInitialTransactions();
+    }
+  }, [userId]); // Removed individual fetch functions from here to avoid direct call in this effect
 
   useEffect(() => {
     if (!userId) return;
-    const sub = client.graphql<ObservableSubscription<OnCreateLedgerEntrySubscription, OnCreateLedgerEntrySubscriptionVariables>>({
+    const clientInstance = generateClient(); // Ensure client is fresh if needed for subscription
+    const subscription = clientInstance.graphql<ObservableSubscription<OnCreateLedgerEntrySubscription, OnCreateLedgerEntrySubscriptionVariables>>({
       query: OnCreateLedgerEntryDocument,
-      variables: { owner: userId },
+      variables: { owner: userId } as OnCreateLedgerEntrySubscriptionVariables, // Explicitly cast if type mismatch
       authMode: 'userPool'
     }).subscribe({
       next: ({ data }) => {
         const newEntry = data?.onCreateLedgerEntry;
         if (newEntry) {
-          setEntries(prevEntries => {
-            if (prevEntries.some(entry => entry.id === newEntry.id)) return prevEntries;
-            return [...prevEntries, newEntry as LedgerEntry].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-          });
+          console.log("Subscription received new ledger entry:", newEntry);
+          // Re-fetch entries to ensure all data is consistent, or update intelligently
+          fetchInitialEntries();
+          // Optionally, if a new entry could affect status (e.g. unapproved invoice value changes on backend)
+          // fetchInitialStatus();
         }
       },
-      error: (err: any) => { console.error("SalesLedger Subscription error:", err); }
+      error: (err: any) => { console.error("SalesLedger Subscription error:", err); setError("Subscription error, please refresh.") }
     });
-    return () => sub.unsubscribe();
-  }, [userId]);
+    return () => subscription.unsubscribe();
+  }, [userId]); // Removed fetchInitialEntries from dependency array to avoid re-subscribing on every entries change
+
 
   useEffect(() => {
     let calculatedSLBalance = 0;
@@ -177,9 +183,11 @@ function SalesLedger() {
     let calculatedAccBalance = 0;
     currentAccountTransactions.forEach(transaction => {
       if (!transaction) return;
-      switch (transaction.type as string) { // Using string literals for enum comparison
-        case "PAYMENT_REQUEST": calculatedAccBalance += transaction.amount; break;
-        case "CASH_RECEIPT": calculatedAccBalance -= transaction.amount; break;
+      // Assuming CurrentAccountTransactionType has similar enum values as LedgerEntryType
+      // Adjust case strings if CurrentAccountTransactionType enums are different
+      switch (transaction.type as string) {
+        case "PAYMENT_REQUEST": calculatedAccBalance += transaction.amount; break; // Money drawn by user increases this balance
+        case "CASH_RECEIPT": calculatedAccBalance -= transaction.amount; break; // Cash receipt on current account reduces drawn amount
         default: break;
       }
     });
@@ -190,7 +198,7 @@ function SalesLedger() {
     const unapprovedValue = accountStatus?.totalUnapprovedInvoiceValue ?? 0;
     const grossAvail = (currentSalesLedgerBalance - unapprovedValue) * ADVANCE_RATE;
     setGrossAvailTemp(grossAvail);
-  }, [currentSalesLedgerBalance, accountStatus]);
+  }, [currentSalesLedgerBalance, accountStatus, ADVANCE_RATE]); // Added ADVANCE_RATE as it's used
 
   useEffect(() => {
     const netAvail = grossAvailTemp - calculatedCurrentAccountBalance;
@@ -201,53 +209,85 @@ function SalesLedger() {
   useEffect(() => { setNetAvailability(Math.max(0, parseFloat(netAvailTemp.toFixed(2)))); }, [netAvailTemp]);
 
   const handleAddLedgerEntry = async (entryData: { type: string, amount: number, description?: string }) => {
+    if (!userId) { setError("User not identified. Cannot add entry."); return;} // Guard for userId
     setError(null);
     try {
       const input: CreateLedgerEntryInput = {
-        type: entryData.type as LedgerEntryType,
+        type: entryData.type as LedgerEntryType, // Ensure LedgerEntryType covers all string values
         amount: entryData.amount,
-        description: entryData.description || null
+        description: entryData.description || null,
+        // owner: userId, // If your schema requires owner on create, it's often handled by resolver or you add it
       };
       await client.graphql<CreateLedgerEntryMutation>({
         query: CreateLedgerEntryDocument,
         variables: { input: input },
         authMode: 'userPool'
       });
+      // Subscription should handle UI update, but if not, call fetchInitialEntries() here.
+      // await fetchInitialEntries(); // Consider if needed if subscription is unreliable or for immediate feedback
+      // await fetchInitialStatus(); // If new entries affect account status (e.g. unapproved invoice total)
     } catch (err: any) {
       const errors = err.errors || [err];
       setError(`Failed to save transaction: ${errors[0]?.message || 'Unknown error'}`);
     }
   };
 
+  // --- MODIFIED FUNCTION ---
   const handlePaymentRequest = async (amount: number) => {
-    setPaymentRequestLoading(true); setPaymentRequestError(null); setPaymentRequestSuccess(null);
+    setPaymentRequestLoading(true);
+    setPaymentRequestError(null);
+    setPaymentRequestSuccess(null);
     try {
+      // API Call to submit the payment request
       const result = await client.graphql<SendPaymentRequestEmailMutation>({
         query: SendPaymentRequestEmailDocument,
-        variables: { amount: amount },
+        variables: { amount: amount }, // 'owner' might be inferred by backend based on Cognito identity
         authMode: 'userPool'
       });
       const responseMessage = result.data?.sendPaymentRequestEmail;
-      if (result.errors) throw result.errors[0];
-      setPaymentRequestSuccess(responseMessage ?? 'Request submitted successfully!');
-    } catch (err: any) {
-      const errors = err.errors || [err];
-      setPaymentRequestError(`Failed to submit request: ${errors[0]?.message || 'Unknown error'}`);
-      setPaymentRequestSuccess(null);
-    } finally { setPaymentRequestLoading(false); }
-  };
 
-  if (userId === null && !error) { // Show loader if userId is null AND there's no auth error yet
+      // Robust error checking from GraphQL response
+      if (result.errors && result.errors.length > 0) {
+        console.error("GraphQL errors on payment request:", result.errors);
+        throw result.errors[0]; // Throw the first GraphQL error to be caught by the catch block
+      }
+
+      setPaymentRequestSuccess(responseMessage ?? 'Request submitted successfully!');
+      console.log("Payment request successful, now refreshing data...");
+
+      // --- KEY CHANGE: Re-fetch data after successful submission ---
+      // This will update currentAccountTransactions, which in turn updates netAvailability through useEffects
+      await fetchInitialTransactions();
+
+      // Optional: Consider if other data also needs refreshing.
+      // If a payment request could somehow impact the overall AccountStatus directly
+      // (e.g., if the backend updates a limit or flag on AccountStatus upon payment):
+      // await fetchInitialStatus();
+
+    } catch (err: any) {
+      // This catch block will handle errors thrown from client.graphql or manually thrown GraphQL errors
+      const errorMessage = err.message || (err.errors && err.errors[0]?.message) || 'Unknown error during payment request.';
+      setPaymentRequestError(`Failed to submit request: ${errorMessage}`);
+      setPaymentRequestSuccess(null); // Clear any optimistic success message
+      console.error("Payment request error details:", err);
+    } finally {
+      setPaymentRequestLoading(false);
+    }
+  };
+  // --- END MODIFIED FUNCTION ---
+
+
+  if (userId === null && !error) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <Loader size="large" /> <Text marginLeft="small">Initializing session...</Text>
       </div>
     );
   }
-  if (error && userId === null) { // If there was an error fetching userId (e.g. not logged in)
-     return <Alert variation="error">{error}</Alert>;
+  if (error && userId === null) {
+     return <Alert variation="error" heading="Session Error">{error}</Alert>;
   }
-  // Show main loader if userId is present but data is still loading
+  // Show main loader if userId is present but initial data is still loading
   if (loadingEntries || loadingStatus || loadingTransactions) {
      return (
        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -259,8 +299,7 @@ function SalesLedger() {
   return (
     <div style={{ padding: '20px' }}>
       <h2>Sales Ledger</h2>
-      {/* Display general errors not caught by specific loaders */}
-      {error && !loadingEntries && !loadingStatus && !loadingTransactions && (
+      {error && !loadingEntries && !loadingStatus && !loadingTransactions && ( // Display general errors only if not in initial loading state
          <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>
       )}
       <CurrentBalance balance={currentSalesLedgerBalance} />
@@ -285,7 +324,8 @@ function SalesLedger() {
       </div>
       <div style={{marginTop: '30px'}}>
         <h3>Current Account Transaction History</h3>
-        <LedgerHistory entries={currentAccountTransactions} historyType="account" isLoading={loadingTransactions} />
+        {/* Assuming CurrentAccountTransaction can be displayed by LedgerHistory or a similar component */}
+        <LedgerHistory entries={currentAccountTransactions as unknown as LedgerEntry[]} historyType="account" isLoading={loadingTransactions} />
       </div>
     </div>
   );
