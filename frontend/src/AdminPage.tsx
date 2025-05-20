@@ -6,19 +6,20 @@ import {
   Heading,
   Text,
   Button,
-  // Table, // Using HTML table
   Loader,
   Card,
-  Badge
+  Badge,
+  View, // Added View for better layout control if needed
 } from '@aws-amplify/ui-react';
 
 // Import generated query and types
 import { AdminListUsersDocument } from './graphql/generated/graphql'; // Verify exact export name
-import type { CognitoUser, UserListResult, UserAttribute, AdminListUsersQuery } from './graphql/generated/graphql'; // Verify exact export names
+import type { CognitoUser, AdminListUsersQuery } from './graphql/generated/graphql'; // Verify exact export names
 
 // Import child components
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
+import SalesLedger from './SalesLedger'; // <<< --- ADD THIS IMPORT
 
 const client = generateClient();
 const USERS_PER_PAGE = 10;
@@ -31,28 +32,34 @@ function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
   const fetchUsers = async (token: string | null = null) => {
-    if (isLoadingUsers) return;
+    if (isLoadingUsers && !token) return; // Allow fetching more even if initial load is happening for "Load More"
     setIsLoadingUsers(true);
     setFetchError(null);
-    if (!token) { setSelectedUser(null); }
+    // Don't clear selectedUser here if just loading more. Clear when fetching initial list (token is null).
+    if (!token) { 
+        setSelectedUser(null); 
+        setUsers([]); // Clear previous users on initial fetch/refresh
+    }
 
-    console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token : 'Initial fetch'}`);
+
+    console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
-      const response = await client.graphql<AdminListUsersQuery>({ // Use generated Query type
-        query: AdminListUsersDocument, // Use imported DocumentNode
+      const response = await client.graphql<AdminListUsersQuery>({
+        query: AdminListUsersDocument,
         variables: {
           limit: USERS_PER_PAGE,
           nextToken: token
         },
-        authMode: 'userPool'
+        authMode: 'userPool' // Ensure admin user has permissions for this query
       });
 
       const resultData = response.data?.adminListUsers;
       const fetchedUsers = resultData?.users?.filter(u => u !== null) as CognitoUser[] || [];
       const paginationToken = resultData?.nextToken ?? null;
 
-      if (response.errors) { // Check for GraphQL errors array
-        throw response.errors;
+      if (response.errors) {
+        console.error("AdminPage: GraphQL errors while fetching users:", response.errors);
+        throw response.errors; // Let the catch block handle it
       }
 
       setUsers(prevUsers => token ? [...prevUsers, ...fetchedUsers] : fetchedUsers);
@@ -60,7 +67,12 @@ function AdminPage() {
 
     } catch (err: any) {
       console.error("AdminPage: Error listing users:", err);
-      const errorMessages = (err.errors as any[])?.map(e => e.message).join(', ') || err.message || 'Unknown error listing users';
+      let errorMessages = 'Unknown error listing users';
+      if (err.errors && Array.isArray(err.errors)) { // GraphQL errors array
+        errorMessages = err.errors.map((e: any) => e.message).join(', ');
+      } else if (err.message) { // Standard JavaScript error
+        errorMessages = err.message;
+      }
       setFetchError(errorMessages);
     } finally {
       setIsLoadingUsers(false);
@@ -68,11 +80,12 @@ function AdminPage() {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsers(); // Initial fetch
   }, []);
 
   const handleUserSelect = (user: CognitoUser) => {
-    setSelectedUser(prevSelected => prevSelected?.sub === user.sub ? null : user);
+    // Toggle selection: if same user is clicked, deselect. Otherwise, select new user.
+    setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
   };
 
   const getUserAttribute = (user: CognitoUser | null, attributeName: string): string | undefined => {
@@ -82,16 +95,16 @@ function AdminPage() {
 
   // Basic styles for HTML table
   const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' };
-  const thTdStyle: React.CSSProperties = { border: '1px solid #ccc', padding: '6px', textAlign: 'left' };
-  const selectedRowStyle: React.CSSProperties = { backgroundColor: '#e6f7ff' };
+  const thTdStyle: React.CSSProperties = { border: '1px solid #ccc', padding: '8px', textAlign: 'left' }; // Increased padding
+  const selectedRowStyle: React.CSSProperties = { backgroundColor: '#e6f7ff', fontWeight: 'bold' };
 
   return (
-    <Flex direction="column" gap="large">
+    <Flex direction="column" gap="large" padding="medium"> {/* Added padding to main Flex */}
       <Heading level={2}>Admin Section</Heading>
       <Card variation="outlined">
         <Heading level={4} marginBottom="medium">Select User to Manage</Heading>
-        {fetchError && <Text color="red">{`Error loading users: ${fetchError}`}</Text>}
-        <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ccc' }}>
+        {fetchError && <Alert variation="error" heading="Error Loading Users">{fetchError}</Alert>}
+        <View style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ccc', marginBottom: 'medium' }}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -104,10 +117,10 @@ function AdminPage() {
             </thead>
             <tbody>
               {!isLoadingUsers && users.length === 0 && !fetchError && (
-                 <tr key="no-users-row"><td colSpan={5} style={thTdStyle}><Text>No users found.</Text></td></tr>
+                  <tr key="no-users-row"><td colSpan={5} style={{...thTdStyle, textAlign: 'center'}}><Text>No users found.</Text></td></tr>
               )}
               {users.map((user) => {
-                  if (!user) return null;
+                  if (!user || !user.sub) return null; // Ensure user and user.sub exist
                   return (
                     <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
                       <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
@@ -126,32 +139,56 @@ function AdminPage() {
                     </tr>
                   );
               })}
-              {isLoadingUsers && (
+              {isLoadingUsers && users.length === 0 && ( // Show loader only if loading initial list
                   <tr key="loader-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td></tr>
               )}
             </tbody>
           </table>
-        </div>
+        </View>
         {nextToken && !isLoadingUsers && (
-          <Button onClick={() => fetchUsers(nextToken)} marginTop="medium" isFullWidth={false}>Load More Users</Button>
+          <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
+         {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>} {/* Loader for "Load More" */}
       </Card>
 
-      <div style={{ marginTop: '20px' }}>
-        {selectedUser ? (
+      <View marginTop="large"> {/* Changed from div to View for consistency */}
+        {selectedUser && selectedUser.sub ? ( // Ensure selectedUser and selectedUser.sub exist
           <>
-            <Heading level={4} marginBottom="small">
-              Actions for User: {getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username} ({selectedUser.sub})
+            <Heading level={3} marginBottom="medium"> {/* Changed to level 3 */}
+              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username} 
+              <Text as="span" fontSize="small" color="font.tertiary"> (ID: {selectedUser.sub})</Text>
             </Heading>
-            <Flex direction="column" gap="medium">
-              <ManageAccountStatus selectedOwnerSub={selectedUser.sub} targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username} />
-              <AddCashReceiptForm selectedTargetSub={selectedUser.sub} />
+            
+            <Flex direction="column" gap="large"> {/* Increased gap for sections */}
+              {/* Existing Action Components */}
+              <Card variation="elevated"> {/* Optional: Wrap in Card */}
+                <Heading level={4} marginBottom="small">Manage Account Status</Heading>
+                <ManageAccountStatus 
+                    selectedOwnerSub={selectedUser.sub} 
+                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username} 
+                />
+              </Card>
+              
+              <Card variation="elevated"> {/* Optional: Wrap in Card */}
+                <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
+                <AddCashReceiptForm selectedTargetSub={selectedUser.sub} />
+              </Card>
+
+              {/* --- NEW: Display Sales Ledger for the selected user --- */}
+              <Card variation="elevated" marginTop="medium"> {/* Optional: Wrap in Card, added marginTop */}
+                <Heading level={4} marginBottom="small">Ledger Details</Heading> {/* Changed to level 4 */}
+                <SalesLedger 
+                  targetUserId={selectedUser.sub} 
+                  isAdmin={true} // Explicitly pass true as this is the AdminPage
+                />
+              </Card>
+              {/* --- END NEW --- */}
             </Flex>
           </>
         ) : (
-           <Text variation="tertiary">Please select a user from the list above to manage their status or add a cash receipt.</Text>
+            !isLoadingUsers && <Alert variation="info">Please select a user from the list above to manage their details or view their ledger.</Alert>
         )}
-      </div>
+      </View>
     </Flex>
   );
 }
