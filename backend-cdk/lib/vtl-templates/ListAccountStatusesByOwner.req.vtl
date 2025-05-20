@@ -1,0 +1,30 @@
+#**
+* VTL for Query.listAccountStatuses to query the 'byOwner' GSI.
+* It expects the 'owner' to be provided via $ctx.args.filter.owner.eq
+* or directly via $ctx.args.owner.
+*#
+
+#set( $ownerValue = $util.defaultIfNull($ctx.args.filter.owner.eq, $ctx.args.owner) )
+
+#if( $util.isNullOrBlank($ownerValue) )
+  ## If no owner is provided, you might want to return an error or an empty list.
+  ## Returning an error is often safer for specific lookups.
+  $util.error("An owner ID must be provided via filter to list account statuses.", "ValidationException")
+#end
+
+{
+  "version": "2018-05-29",
+  "operation": "Query",
+  "index": "byOwner", ## Make sure this is the name of your GSI on AccountStatusTable
+  "query": {
+    "expression": "#ownerAttribute = :ownerValue",
+    "expressionNames": {
+      "#ownerAttribute": "owner" ## The GSI partition key name
+    },
+    "expressionValues": {
+      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerValue)
+    }
+  },
+  "limit": $util.defaultIfNull($ctx.args.limit, 1), ## Default limit to 1 as we expect one status per owner
+  "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.args.nextToken, null))
+}

@@ -181,6 +181,14 @@ type Mutation @aws_cognito_user_pools { # Default auth is Cognito User Pools
     @aws_cognito_user_pools(cognito_groups: ["Admin"])
 
   sendPaymentRequestEmail(amount: Float!): String
+  
+  # Inside your 'type Mutation @aws_cognito_user_pools { ... }' block
+
+  # ... existing mutations ...
+
+  # NEW Admin Mutation to create AccountStatus
+  adminCreateAccountStatus(ownerId: String!, initialUnapprovedInvoiceValue: Float): AccountStatus
+    @aws_cognito_user_pools(cognito_groups: ["Admin"])
 
 }
 

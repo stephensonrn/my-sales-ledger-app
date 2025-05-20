@@ -1,0 +1,36 @@
+## Initialize attributes to update ##
+        #set( $update = {} )
+        #set( $update.expression = "SET #updatedAt = :updatedAt" )
+        #set( $update.expressionNames = { "#owner": "owner", "#updatedAt": "updatedAt" } )
+        #set( $update.expressionValues = {
+            ":owner": $util.dynamodb.toDynamoDBJson($context.identity.sub),
+            ":updatedAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
+        } )
+        ## Add fields to update expression if they exist in input ##
+        #if($ctx.args.input.containsKey("type") && $util.defaultIfNull($ctx.args.input.type, "") != "")
+            $util.qr($update.put("expression", "$update.expression, #type = :type"))
+            $util.qr($update.expressionNames.put("#type", "type"))
+            $util.qr($update.expressionValues.put(":type", $util.dynamodb.toDynamoDBJson($ctx.args.input.type)))
+        #end
+        #if($ctx.args.input.containsKey("amount") && !$util.isNull($ctx.args.input.amount))
+            $util.qr($update.put("expression", "$update.expression, #amount = :amount"))
+            $util.qr($update.expressionNames.put("#amount", "amount"))
+            $util.qr($update.expressionValues.put(":amount", $util.dynamodb.toDynamoDBJson($ctx.args.input.amount)))
+        #end
+        #if($ctx.args.input.containsKey("description"))
+             $util.qr($update.put("expression", "$update.expression, #description = :description"))
+             $util.qr($update.expressionNames.put("#description", "description"))
+             $util.qr($update.expressionValues.put(":description", $util.dynamodb.toDynamoDBJson($ctx.args.input.description)))
+        #end
+        ## Final Request object ##
+        {
+            "version": "2018-05-29",
+            "operation": "UpdateItem",
+            "key": {
+                "id": $util.dynamodb.toDynamoDBJson($ctx.args.input.id)
+            },
+            "update": $update,
+            "condition": {
+                "expression": "attribute_exists(id) AND #owner = :owner"
+            }
+        }

@@ -1,89 +1,132 @@
-// backend-cdk/lambda-handlers/adminDataActions/handler.ts
-import type { AppSyncResolverHandler } from 'aws-lambda';
+// lambda-handlers/adminDataActions/handler.ts
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { ulid } from "ulid";
+import { DynamoDBDocumentClient, PutCommand, PutCommandOutput } from "@aws-sdk/lib-dynamodb";
+import { randomUUID } from 'crypto'; // For generating IDs if AccountStatus ID is different from ownerId
 
-const ddbClient = new DynamoDBClient({});
-const marshallOptions = { removeUndefinedValues: true };
-const translateConfig = { marshallOptions };
-const ddbDocClient = DynamoDBDocumentClient.from(ddbClient, translateConfig);
+interface EventArguments {
+    // For adminAddCashReceipt
+    targetOwnerId?: string;
+    amount?: number;
+    description?: string;
 
-interface AdminAddCashReceiptArgs {
-    targetOwnerId: string;
-    amount: number;
-    description?: string | null;
+    // For adminCreateAccountStatus
+    ownerId?: string; // This will be the Cognito Sub ID of the target user
+    initialUnapprovedInvoiceValue?: number;
 }
 
-type CurrentAccountTransactionResult = { /* ... as defined before ... */ } | null;
-// Define LedgerEntry structure for return if needed, or just return the CurrentAccountTransaction
-type LedgerEntryResult = { id: string; owner: string; type: string; amount: number; description?: string | null; createdAt: string; updatedAt: string; __typename: 'LedgerEntry'; };
+interface AppSyncEvent {
+    info: {
+        fieldName: string; // To determine which mutation is being called
+    };
+    arguments: EventArguments;
+}
 
+const client = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(client);
 
-export const handler: AppSyncResolverHandler<AdminAddCashReceiptArgs, CurrentAccountTransactionResult> = async (event) => {
-    const CURRENT_ACCT_TABLE_NAME = process.env.CURRENT_ACCT_TABLE_NAME;
-    const LEDGER_ENTRY_TABLE_NAME = process.env.LEDGER_ENTRY_TABLE_NAME; // New Env Var
+const CURRENT_ACCT_TABLE_NAME = process.env.CURRENT_ACCT_TABLE_NAME;
+const LEDGER_ENTRY_TABLE_NAME = process.env.LEDGER_ENTRY_TABLE_NAME;
+const ACCOUNT_STATUS_TABLE_NAME = process.env.ACCOUNT_STATUS_TABLE_NAME; // Will be added via CDK
 
-    console.log('ADMIN ACTION EVENT (Cash Receipt):', JSON.stringify(event, null, 2));
+export const handler = async (event: AppSyncEvent): Promise<any> => {
+    console.log(`Received event: ${JSON.stringify(event)}`);
 
-    if (!CURRENT_ACCT_TABLE_NAME || !LEDGER_ENTRY_TABLE_NAME) {
-        console.error('Missing table name environment variables.');
-        throw new Error('Lambda configuration error (TABLE NAMES).');
+    if (!CURRENT_ACCT_TABLE_NAME || !LEDGER_ENTRY_TABLE_NAME || !ACCOUNT_STATUS_TABLE_NAME) {
+        console.error("Missing table name environment variables!");
+        throw new Error("Configuration error: Table names not set.");
     }
 
-    const { targetOwnerId, amount, description } = event.arguments;
+    const now = new Date().toISOString();
 
-    if (!targetOwnerId || typeof amount !== 'number' || amount <= 0) {
-        console.error('Invalid input for cash receipt:', event.arguments);
-        throw new Error('Target Owner ID and a valid positive amount are required.');
+    // --- Handle adminCreateAccountStatus ---
+    if (event.info.fieldName === "adminCreateAccountStatus") {
+        if (!event.arguments.ownerId) {
+            throw new Error("ownerId is required for adminCreateAccountStatus.");
+        }
+
+        const accountStatusId = event.arguments.ownerId; // Using owner's sub as the AccountStatus ID
+        const owner = event.arguments.ownerId;
+        const totalUnapprovedInvoiceValue = event.arguments.initialUnapprovedInvoiceValue ?? 0;
+
+        const newAccountStatus = {
+            id: accountStatusId,
+            owner: owner,
+            totalUnapprovedInvoiceValue: totalUnapprovedInvoiceValue,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        const params = {
+            TableName: ACCOUNT_STATUS_TABLE_NAME,
+            Item: newAccountStatus,
+            // ConditionExpression: "attribute_not_exists(id)" // Optional: prevent overwriting
+        };
+
+        console.log("Attempting to create AccountStatus with params:", params);
+        try {
+            await docClient.send(new PutCommand(params));
+            console.log("AccountStatus created successfully:", newAccountStatus);
+            return newAccountStatus; // Return the created object
+        } catch (error) {
+            console.error("Error creating AccountStatus:", error);
+            throw new Error(`Could not create AccountStatus: ${error.message}`);
+        }
     }
 
-    const timestamp = new Date().toISOString();
-    const cashReceiptIdForCurrentAccount = ulid();
-    const cashReceiptIdForSalesLedger = ulid(); // Separate ID for ledger entry
+    // --- Handle adminAddCashReceipt (existing logic) ---
+    else if (event.info.fieldName === "adminAddCashReceipt") {
+        if (!event.arguments.targetOwnerId || typeof event.arguments.amount !== 'number') {
+            throw new Error("targetOwnerId and amount are required for adminAddCashReceipt.");
+        }
 
-    const currentAccountTxItem = {
-        id: cashReceiptIdForCurrentAccount,
-        owner: targetOwnerId,
-        type: 'CASH_RECEIPT', // This DECREASES the current account balance (reduces amount owed)
-        amount: amount,       // Store positive value
-        description: description ?? `Cash Receipt - ${targetOwnerId}`,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        __typename: 'CurrentAccountTransaction'
-    };
+        const transactionId = randomUUID();
+        const cashReceiptLedgerEntryId = randomUUID(); // Separate ID for LedgerEntry
 
-    const ledgerEntryItem = {
-        id: cashReceiptIdForSalesLedger,
-        owner: targetOwnerId,
-        type: 'CASH_RECEIPT', // Use 'CASH_RECEIPT' or 'CASH_APPLIED_AS_CREDIT' (ensure enum exists in AppSync schema)
-        amount: amount,       // This will be treated as a credit on sales ledger
-        description: description ?? `Cash Receipt - SL Application`,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        __typename: 'LedgerEntry'
-    };
+        const currentAccountTransaction = {
+            id: transactionId,
+            owner: event.arguments.targetOwnerId,
+            type: "CASH_RECEIPT", // From CurrentAccountTransactionType enum
+            amount: event.arguments.amount,
+            description: event.arguments.description || "Cash receipt by admin",
+            createdAt: now,
+            updatedAt: now,
+        };
 
-    try {
-        console.log("Attempting to put item into CurrentAccountTransaction Table:", currentAccountTxItem);
-        await ddbDocClient.send(new PutCommand({ TableName: CURRENT_ACCT_TABLE_NAME, Item: currentAccountTxItem }));
-        console.log("CurrentAccountTransaction record created successfully by admin.");
+        const ledgerEntryCashReceipt = {
+            id: cashReceiptLedgerEntryId,
+            owner: event.arguments.targetOwnerId,
+            type: "CASH_RECEIPT", // From LedgerEntryType enum
+            amount: event.arguments.amount,
+            description: `Ref: ${transactionId} - ${event.arguments.description || "Cash receipt by admin"}`,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        const transactionParams = {
+            TableName: CURRENT_ACCT_TABLE_NAME,
+            Item: currentAccountTransaction,
+        };
+        const ledgerParams = {
+            TableName: LEDGER_ENTRY_TABLE_NAME,
+            Item: ledgerEntryCashReceipt,
+        };
 
         try {
-            console.log("Attempting to put item into LedgerEntry Table:", ledgerEntryItem);
-            await ddbDocClient.send(new PutCommand({ TableName: LEDGER_ENTRY_TABLE_NAME, Item: ledgerEntryItem }));
-            console.log("LedgerEntry record for cash receipt created successfully by admin.");
-        } catch (ledgerDbError: any) {
-            console.error("Error creating LedgerEntry for cash receipt (CurrentAccountTransaction WAS saved):", ledgerDbError);
-            // Depending on desired atomicity, you might want to attempt to roll back the CurrentAccountTransaction
-            // For simplicity here, we proceed but inform about partial success.
-            throw new Error(`Cash receipt recorded in current account, but failed to update sales ledger: ${ledgerDbError.message}`);
+            console.log("Adding CurrentAccountTransaction:", currentAccountTransaction);
+            await docClient.send(new PutCommand(transactionParams));
+            console.log("Adding LedgerEntry for cash receipt:", ledgerEntryCashReceipt);
+            await docClient.send(new PutCommand(ledgerParams));
+            console.log("adminAddCashReceipt successful.");
+            return currentAccountTransaction; // Return the CurrentAccountTransaction object
+        } catch (error) {
+            console.error("Error in adminAddCashReceipt:", error);
+            throw new Error(`Could not process adminAddCashReceipt: ${error.message}`);
         }
-        
-        return currentAccountTxItem as CurrentAccountTransactionResult; // Return the primary transaction
+    }
 
-    } catch (dbError: any) {
-        console.error("Error during database operations for admin cash receipt:", dbError);
-        throw new Error(`Failed to process cash receipt: ${dbError.message || 'Internal DB Error'}`);
+    // --- Add other admin actions here if needed ---
+    else {
+        console.error(`Unknown field, unable to resolve ${event.info.fieldName}`);
+        throw new Error(`Unknown field, unable to resolve ${event.info.fieldName}`);
     }
 };

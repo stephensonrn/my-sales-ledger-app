@@ -1,0 +1,20 @@
+
+      {
+        "version": "2018-05-29",
+        "operation": "UpdateItem",
+        "key": {
+          "id": $util.dynamodb.toDynamoDBJson($ctx.args.input.id)
+        },
+        "update": {
+          "expression": "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValue, #updatedAt = :updatedAt",
+          "expressionNames": {
+            "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
+            "#updatedAt": "updatedAt"
+          },
+          "expressionValues": {
+            ":totalUnapprovedInvoiceValue": $util.dynamodb.toDynamoDBJson($ctx.args.input.totalUnapprovedInvoiceValue),
+            ":updatedAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
+          }
+        }
+        ## Add condition like "attribute_exists(id)" if needed ##
+      }
