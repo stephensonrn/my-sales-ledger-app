@@ -1,15 +1,41 @@
+## VTL Request Template for Query.listCurrentAccountTransactions
+## Fetches current account transactions based on owner, supports pagination.
+## Differentiates between admin and non-admin users for owner filtering.
+
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
-        #set( $owner = $context.identity.sub )
-        {
-          "version": "2018-05-29",
-          "operation": "Query",
-          "index": "byOwner",
-          "query": {
-            "expression": "#owner = :owner",
-            "expressionNames": { "#owner": "owner" },
-            "expressionValues": { ":owner": $util.dynamodb.toDynamoDBJson($owner) }
-          },
-          "limit": $limit,
-          "nextToken": $util.toJson($context.args.nextToken)
-          ## TODO: Add filter expression logic using $context.args.filter here ##
-        }
+#set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
+
+#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  ## User is an Admin
+  #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq )
+    ## Admin is providing a specific owner ID to query
+    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #else
+    ## Admin did not provide an owner filter. Consider erroring or defaulting.
+    // $util.error("Admin users must specify an owner filter for transactions.", "ValidationException")
+  #end
+#end
+
+{
+  "version": "2018-05-29",
+  "operation": "Query",
+  "index": "byOwner",
+  "query": {
+    "expression": "#ownerAttribute = :ownerValue",
+    "expressionNames": {
+      "#ownerAttribute": "owner"
+    },
+    "expressionValues": {
+      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery)
+    }
+  },
+  "limit": $limit,
+  #if( $nextToken )
+    "nextToken": $util.toJson($nextToken)
+  #end
+  ## Optional: If your 'byOwner' GSI has a sort key (e.g., 'createdAt') and you want to sort:
+  // "scanIndexForward": false, // false for descending (newest first), true for ascending
+  ## Optional: Add further filter expressions if needed
+}

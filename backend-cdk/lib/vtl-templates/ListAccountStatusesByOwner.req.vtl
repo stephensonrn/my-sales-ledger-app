@@ -1,30 +1,38 @@
-#**
-* VTL for Query.listAccountStatuses to query the 'byOwner' GSI.
-* It expects the 'owner' to be provided via $ctx.args.filter.owner.eq
-* or directly via $ctx.args.owner.
-*#
+## VTL Request Template for Query.listAccountStatuses
+## Fetches account statuses based on owner, supports pagination.
+## Differentiates between admin and non-admin users for owner filtering.
 
-#set( $ownerValue = $util.defaultIfNull($ctx.args.filter.owner.eq, $ctx.args.owner) )
+#set( $limit = $util.defaultIfNull($context.args.limit, 1) ) ## Default limit might be 1 for status
+#set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
-#if( $util.isNullOrBlank($ownerValue) )
-  ## If no owner is provided, you might want to return an error or an empty list.
-  ## Returning an error is often safer for specific lookups.
-  $util.error("An owner ID must be provided via filter to list account statuses.", "ValidationException")
+#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  ## User is an Admin
+  #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq )
+    ## Admin is providing a specific owner ID to query
+    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #else
+    ## Admin did not provide an owner filter. Consider erroring or defaulting.
+    // $util.error("Admin users must specify an owner filter for account status.", "ValidationException")
+  #end
 #end
 
 {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Make sure this is the name of your GSI on AccountStatusTable
+  "index": "byOwner",
   "query": {
     "expression": "#ownerAttribute = :ownerValue",
     "expressionNames": {
-      "#ownerAttribute": "owner" ## The GSI partition key name
+      "#ownerAttribute": "owner"
     },
     "expressionValues": {
-      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerValue)
+      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery)
     }
   },
-  "limit": $util.defaultIfNull($ctx.args.limit, 1), ## Default limit to 1 as we expect one status per owner
-  "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.args.nextToken, null))
+  "limit": $limit,
+  #if( $nextToken )
+    "nextToken": $util.toJson($nextToken)
+  #end
 }
