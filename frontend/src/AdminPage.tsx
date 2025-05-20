@@ -10,6 +10,7 @@ import {
   Card,
   Badge,
   View, // Added View for better layout control if needed
+  Alert
 } from '@aws-amplify/ui-react';
 
 // Import generated query and types
