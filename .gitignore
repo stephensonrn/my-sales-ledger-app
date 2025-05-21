@@ -4,8 +4,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-package-lock.json # Optional: some teams commit this, others don't. If you do, remove this line.
-                  # For consistency in builds (like Amplify Hosting), committing it is often good.
 
 # Build output folders
 dist/

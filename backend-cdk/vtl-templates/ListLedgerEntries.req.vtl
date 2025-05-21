@@ -1,15 +1,79 @@
+## VTL Request Template for Query.listLedgerEntries
+## Fetches ledger entries.
+## - Non-admins see their own entries.
+## - Admins can see entries for the owner specified in args.filter.owner.eq.
+
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
-        #set( $owner = $context.identity.sub ) ## Assumes username is the owner field value
-        {
-          "version": "2018-05-29",
-          "operation": "Query",
-          "index": "byOwner",
-          "query": {
-            "expression": "#owner = :owner",
-            "expressionNames": { "#owner": "owner" },
-            "expressionValues": { ":owner": $util.dynamodb.toDynamoDBJson($owner) }
-          },
-          "limit": $limit,
-          "nextToken": $util.toJson($context.args.nextToken)
-          ## TODO: Add filter expression logic using $context.args.filter here ##
-        }
+
+## Determine the owner for the DynamoDB query
+#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
+    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #end
+#end
+
+## Ensure ownerIdToQuery is not null or empty
+#if( $util.isNullOrEmpty($ownerIdToQuery) )
+  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated.", "InvalidRequestException")
+#end
+
+## Initialize Expression Names & Values for the main query by owner
+#set( $expressionNames = { "#ownerAttribute": "owner" } )
+#set( $expressionValues = { ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery) } )
+#set( $keyConditionExpression = "#ownerAttribute = :ownerValue" )
+
+## --- START: Minimal Logging (Uncomment if still debugging) ---
+## $util.qr($ctx.log.info("LEDGER_VTL_REQ: Effective Owner for Query: $ownerIdToQuery"))
+## --- END: Logging ---
+
+#set( $queryObj = {
+  "version": "2018-05-29",
+  "operation": "Query",
+  "index": "byOwner",
+  "query": {
+    "expression": $keyConditionExpression,
+    "expressionNames": $expressionNames,
+    "expressionValues": $expressionValues
+  },
+  "limit": $limit,
+  "scanIndexForward": false ## Optional: Sorts by sort key descending (e.g., newest first if sort key is createdAt)
+                           ## Remove or set to true for ascending. Requires a sort key on the GSI.
+})
+
+## Correctly handle nextToken
+#if( $context.args.nextToken && !$util.isNullOrBlank($context.args.nextToken) )
+  $util.qr($queryObj.put("nextToken", $context.args.nextToken))
+#end
+
+## Optional: Add additional filters from $context.args.filter
+#if( $context.args.filter )
+  #set( $filterExpressionParts = [] )
+  ## Add to the existing $expressionNames and $expressionValues maps
+
+  #if( $context.args.filter.type && $context.args.filter.type.eq )
+    $util.qr($filterExpressionParts.add("#filterLedgerEntryType = :filterLedgerEntryType"))
+    $util.qr($expressionNames.put("#filterLedgerEntryType", "type")) ## Add to main map
+    $util.qr($expressionValues.put(":filterLedgerEntryType", $util.dynamodb.toDynamoDBJson($context.args.filter.type.eq))) ## Add to main map
+  #end
+
+  ## Add more filter conditions here using the same pattern:
+  ## 1. Add to $filterExpressionParts
+  ## 2. Add placeholder name to $expressionNames (if new)
+  ## 3. Add placeholder value to $expressionValues
+
+  #if( !$filterExpressionParts.isEmpty() )
+    $util.qr($queryObj.put("filter", {
+        "expression": $util.listJoin(" AND ", $filterExpressionParts)
+        ## expressionNames and expressionValues for the filter are now part of the main maps
+        ## so they don't need to be separately added to $queryObj.filter if already on $queryObj.query
+    }))
+    ## If your filter expressions need different names/values than the main query,
+    ## you would need to manage them carefully or merge them into the main maps if no conflicts.
+    ## The above approach of adding to the main maps is usually simpler if names don't clash.
+  #end
+#end
+
+## $util.qr($ctx.log.info("LEDGER_VTL_REQ: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+$util.toJson($queryObj)

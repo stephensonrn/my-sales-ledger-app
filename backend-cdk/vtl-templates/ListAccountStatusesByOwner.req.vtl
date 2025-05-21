@@ -1,30 +1,40 @@
-#**
-* VTL for Query.listAccountStatuses to query the 'byOwner' GSI.
-* It expects the 'owner' to be provided via $ctx.args.filter.owner.eq
-* or directly via $ctx.args.owner.
-*#
+## VTL Request Template for Query.listAccountStatuses
+## Fetches account statuses.
+## - Non-admins see their own status.
+## - Admins can see status for the owner specified in args.filter.owner.eq.
+## - If admin provides no owner filter, they see their own status.
 
-#set( $ownerValue = $util.defaultIfNull($ctx.args.filter.owner.eq, $ctx.args.owner) )
+#set( $limit = $util.defaultIfNull($context.args.limit, 1) ) ## Often only one status per user
+#set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
-#if( $util.isNullOrBlank($ownerValue) )
-  ## If no owner is provided, you might want to return an error or an empty list.
-  ## Returning an error is often safer for specific lookups.
-  $util.error("An owner ID must be provided via filter to list account statuses.", "ValidationException")
+#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
+    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #end
+#end
+
+## Ensure ownerIdToQuery is not null or empty
+#if( $util.isNullOrEmpty($ownerIdToQuery) )
+  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated.", "InvalidRequestException")
 #end
 
 {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Make sure this is the name of your GSI on AccountStatusTable
+  "index": "byOwner", ## Assumes your GSI is named 'byOwner'
   "query": {
     "expression": "#ownerAttribute = :ownerValue",
     "expressionNames": {
-      "#ownerAttribute": "owner" ## The GSI partition key name
+      "#ownerAttribute": "owner" ## Actual attribute name for owner in DynamoDB
     },
     "expressionValues": {
-      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerValue)
+      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery)
     }
   },
-  "limit": $util.defaultIfNull($ctx.args.limit, 1), ## Default limit to 1 as we expect one status per owner
-  "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.args.nextToken, null))
+  "limit": $limit,
+  #if( $nextToken )
+    "nextToken": $nextToken
+  #end
 }

@@ -1,36 +1,66 @@
-## Initialize attributes to update ##
-        #set( $update = {} )
-        #set( $update.expression = "SET #updatedAt = :updatedAt" )
-        #set( $update.expressionNames = { "#owner": "owner", "#updatedAt": "updatedAt" } )
-        #set( $update.expressionValues = {
-            ":owner": $util.dynamodb.toDynamoDBJson($context.identity.sub),
-            ":updatedAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
-        } )
-        ## Add fields to update expression if they exist in input ##
-        #if($ctx.args.input.containsKey("type") && $util.defaultIfNull($ctx.args.input.type, "") != "")
-            $util.qr($update.put("expression", "$update.expression, #type = :type"))
-            $util.qr($update.expressionNames.put("#type", "type"))
-            $util.qr($update.expressionValues.put(":type", $util.dynamodb.toDynamoDBJson($ctx.args.input.type)))
-        #end
-        #if($ctx.args.input.containsKey("amount") && !$util.isNull($ctx.args.input.amount))
-            $util.qr($update.put("expression", "$update.expression, #amount = :amount"))
-            $util.qr($update.expressionNames.put("#amount", "amount"))
-            $util.qr($update.expressionValues.put(":amount", $util.dynamodb.toDynamoDBJson($ctx.args.input.amount)))
-        #end
-        #if($ctx.args.input.containsKey("description"))
-             $util.qr($update.put("expression", "$update.expression, #description = :description"))
-             $util.qr($update.expressionNames.put("#description", "description"))
-             $util.qr($update.expressionValues.put(":description", $util.dynamodb.toDynamoDBJson($ctx.args.input.description)))
-        #end
-        ## Final Request object ##
-        {
-            "version": "2018-05-29",
-            "operation": "UpdateItem",
-            "key": {
-                "id": $util.dynamodb.toDynamoDBJson($ctx.args.input.id)
-            },
-            "update": $update,
-            "condition": {
-                "expression": "attribute_exists(id) AND #owner = :owner"
-            }
-        }
+## VTL Request Template for Mutation.updateLedgerEntry
+## Updates a ledger entry.
+## - Non-admins can only update their own entries.
+## - Admins can update any entry (identified by input.id).
+
+#set( $targetId = $ctx.args.input.id )
+
+#if( $util.isNullOrEmpty($targetId) )
+  $util.error("Input 'id' is required to update a ledger entry.", "ValidationException")
+#end
+
+## Initialize attributes for the update operation
+#set( $updateExpression = "SET #updatedAtVal = :updatedAtValue" ) ## Renamed placeholder for clarity
+#set( $expressionAttributeNames = { "#updatedAtVal": "updatedAt" } )
+#set( $expressionAttributeValues = { ":updatedAtValue": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601()) } )
+
+## Dynamically add fields to the update expression if they are provided in the input
+#if( $ctx.args.input.containsKey("type") && !$util.isNullOrBlank($ctx.args.input.type) )
+  #set( $updateExpression = "$updateExpression, #typeVal = :typeValue" )
+  $util.qr($expressionAttributeNames.put("#typeVal", "type"))
+  $util.qr($expressionAttributeValues.put(":typeValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.type)))
+#end
+
+#if( $ctx.args.input.containsKey("amount") && !$util.isNull($ctx.args.input.amount) )
+  #set( $updateExpression = "$updateExpression, #amountVal = :amountValue" )
+  $util.qr($expressionAttributeNames.put("#amountVal", "amount"))
+  $util.qr($expressionAttributeValues.put(":amountValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.amount)))
+#end
+
+#if( $ctx.args.input.containsKey("description") ) ## Allow null to set/clear description
+  #set( $updateExpression = "$updateExpression, #descriptionVal = :descriptionValue" )
+  $util.qr($expressionAttributeNames.put("#descriptionVal", "description"))
+  $util.qr($expressionAttributeValues.put(":descriptionValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.description)))
+#end
+
+## --- Condition Expression for Authorization ---
+#set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
+
+#if( !($context.identity.groups && $context.identity.groups.contains("Admin")) )
+  ## Non-admin user: Enforce that they are updating their own entry.
+  $util.qr($conditionExpressionParts.add("#ownerAttributeCond = :loggedInUserSubCond"))
+  $util.qr($expressionAttributeNames.put("#ownerAttributeCond", "owner")) ## Name for condition
+  $util.qr($expressionAttributeValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDBJson($context.identity.sub))) ## Value for condition
+#else
+  ## Admin user: The base condition "attribute_exists(id)" is sufficient.
+  ## They are trusted to update the record specified by $targetId if it exists.
+#end
+
+#set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
+
+{
+  "version": "2018-05-29",
+  "operation": "UpdateItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDBJson($targetId)
+  },
+  "update": {
+    "expression": $updateExpression,
+    "expressionNames": $expressionAttributeNames,
+    "expressionValues": $expressionAttributeValues
+  },
+  "condition": {
+    "expression": $finalConditionExpression
+    ## expressionNames and expressionValues for the condition are now part of the main maps
+  }
+}
