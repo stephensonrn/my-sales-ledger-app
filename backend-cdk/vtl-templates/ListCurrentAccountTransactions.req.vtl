@@ -6,7 +6,7 @@
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
 
 ## Determine the owner for the DynamoDB query
-#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+#set( $ownerIdToQuery = $context.identity.sub )
 
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
@@ -14,19 +14,15 @@
   #end
 #end
 
-## Ensure ownerIdToQuery is not null or empty
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
   $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated.", "InvalidRequestException")
 #end
 
-## Initialize Expression Names & Values for the main query by owner
 #set( $expressionNames = { "#ownerAttribute": "owner" } )
-#set( $expressionValues = { ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery) } )
+#set( $expressionValues = { ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery) } )
 #set( $keyConditionExpression = "#ownerAttribute = :ownerValue" )
 
-## --- START: Logging for Debugging (Minimal for now) ---
-$util.qr($ctx.log.info("TXN_VTL_REQ: Effective Owner for Query: $ownerIdToQuery"))
-## --- END: Logging for Debugging ---
+$util.qr($ctx.log.info("TXN_VTL_REQ: Effective Owner for Query (ListCurrentAccountTransactions): $ownerIdToQuery"))
 
 #set( $queryObj = {
   "version": "2018-05-29",
@@ -38,59 +34,35 @@ $util.qr($ctx.log.info("TXN_VTL_REQ: Effective Owner for Query: $ownerIdToQuery"
     "expressionValues": $expressionValues
   },
   "limit": $limit,
-  "scanIndexForward": false ## Optional: Sorts by sort key descending (e.g., newest first if sort key is createdAt)
-                           ## Remove or set to true for ascending. Requires a sort key on the GSI.
+  "scanIndexForward": false
 })
 
-## Correctly handle nextToken
 #if( $context.args.nextToken && !$util.isNullOrBlank($context.args.nextToken) )
   $util.qr($queryObj.put("nextToken", $context.args.nextToken))
 #end
 
-## Optional: Add additional filters from $context.args.filter
 #if( $context.args.filter )
   #set( $filterExpressionParts = [] )
-  ## It's safer to add to the existing $expressionNames and $expressionValues
-  ## if they are not already defined by the main query.
-  ## For simplicity, ensure filter placeholders are unique from key condition placeholders.
 
-  #if( $context.args.filter.type && $context.args.filter.type.eq )
-    $util.qr($filterExpressionParts.add("#filterTransactionType = :filterTransactionType"))
-    $util.qr($expressionNames.put("#filterTransactionType", "type")) ## Add to main map
-    $util.qr($expressionValues.put(":filterTransactionType", $util.dynamodb.toDynamoDBJson($context.args.filter.type.eq))) ## Add to main map
+  #if( $context.args.filter.type && $context.args.filter.type.eq && !$util.isNullOrBlank($context.args.filter.type.eq) )
+    $util.qr($filterExpressionParts.add("#filterTransactionType = :filterTransactionTypeValue"))
+    $util.qr($expressionNames.put("#filterTransactionType", "type")) 
+    $util.qr($expressionValues.put(":filterTransactionTypeValue", $util.dynamodb.toDynamoDB($context.args.filter.type.eq)))
   #end
 
-  ## Add more filter conditions here using the same pattern, adding to $filterExpressionParts,
-  ## $expressionNames, and $expressionValues.
+  #if( $context.args.filter.createdAt && $context.args.filter.createdAt.between && $context.args.filter.createdAt.between.size() == 2 )
+    $util.qr($filterExpressionParts.add("#filterCreatedAt BETWEEN :startRange AND :endRange"))
+    $util.qr($expressionNames.put("#filterCreatedAt", "createdAt"))
+    $util.qr($expressionValues.put(":startRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[0])))
+    $util.qr($expressionValues.put(":endRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[1])))
+  #end
 
   #if( !$filterExpressionParts.isEmpty() )
     $util.qr($queryObj.put("filter", {
-        "expression": $util.listJoin(" AND ", $filterExpressionParts)
-        ## expressionNames and expressionValues are already part of the top-level queryObj if added to main maps
+      "expression": $util.listJoin(" AND ", $filterExpressionParts)
     }))
-    ## If you kept filterExpressionNames and filterExpressionValues separate, you'd need to put them here:
-    #if( $queryObj.filter.expressionNames ) ## If names were added by filter conditions
-        #foreach( $key in $expressionNames.keySet() )
-            $util.qr($queryObj.filter.expressionNames.put($key, $expressionNames.get($key)))
-        #end
-    #else
-        #if( !$expressionNames.isEmpty() && $queryObj.filter.expression.contains("#")) ## Check if expression has placeholders
-             $util.qr($queryObj.filter.put("expressionNames", $expressionNames))
-        #end
-    #end
-    #if( $queryObj.filter.expressionValues ) ## If values were added by filter conditions
-        #foreach( $key in $expressionValues.keySet() )
-            $util.qr($queryObj.filter.expressionValues.put($key, $expressionValues.get($key)))
-        #end
-    #else
-        #if( !$expressionValues.isEmpty() && $queryObj.filter.expression.contains(":")) ## Check if expression has placeholders
-            $util.qr($queryObj.filter.put("expressionValues", $expressionValues))
-        #end
-    #end
-
   #end
 #end
 
-
-$util.qr($ctx.log.info("TXN_VTL_REQ: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+$util.qr($ctx.log.info("TXN_VTL_REQ: Final DynamoDB Query Object (ListCurrentAccountTransactions): $util.toJson($queryObj)"))
 $util.toJson($queryObj)
