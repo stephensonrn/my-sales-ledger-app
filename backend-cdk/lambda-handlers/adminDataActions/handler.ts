@@ -1,132 +1,218 @@
-// lambda-handlers/adminDataActions/handler.ts
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, PutCommandOutput } from "@aws-sdk/lib-dynamodb";
-import { randomUUID } from 'crypto'; // For generating IDs if AccountStatus ID is different from ownerId
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { ulid } from "ulid"; // For generating unique IDs
 
-interface EventArguments {
-    // For adminAddCashReceipt
-    targetOwnerId?: string;
+// Environment Variables (set these in your CDK stack definition for the Lambda)
+const DDB_TABLE_TRANSACTIONS = process.env.CURRENT_ACCT_TABLE_NAME;
+const DDB_TABLE_ACCOUNT_STATUS = process.env.ACCOUNT_STATUS_TABLE_NAME;
+const AWS_REGION = process.env.AWS_REGION || "eu-west-1"; // Fallback region if not set
+
+if (!DDB_TABLE_TRANSACTIONS || !DDB_TABLE_ACCOUNT_STATUS) {
+  throw new Error(
+    "Missing required environment variables: CURRENT_ACCT_TABLE_NAME and/or ACCOUNT_STATUS_TABLE_NAME"
+  );
+}
+
+const ddbClient = new DynamoDBClient({ region: AWS_REGION });
+const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+
+interface AppSyncEventArguments {
+  // For adminAddCashReceipt
+  targetOwnerId?: string;
+  amount?: number;
+  description?: string;
+
+  // For adminCreateAccountStatus
+  ownerId?: string;
+  initialUnapprovedInvoiceValue?: number;
+
+  // For adminRequestPaymentForUser (nested in input)
+  input?: {
+    targetUserId?: string;
     amount?: number;
-    description?: string;
-
-    // For adminCreateAccountStatus
-    ownerId?: string; // This will be the Cognito Sub ID of the target user
-    initialUnapprovedInvoiceValue?: number;
+    // add other fields from AdminRequestPaymentForUserInput if any
+  };
 }
 
 interface AppSyncEvent {
-    info: {
-        fieldName: string; // To determine which mutation is being called
-    };
-    arguments: EventArguments;
+  arguments: AppSyncEventArguments;
+  identity: {
+    sub: string;
+    username: string;
+    groups: string[] | null;
+    // other identity fields...
+  };
+  info: {
+    fieldName: string; // e.g., "adminAddCashReceipt"
+    parentTypeName: string; // e.g., "Mutation"
+    // ... other info
+  };
 }
 
-const client = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(client);
-
-const CURRENT_ACCT_TABLE_NAME = process.env.CURRENT_ACCT_TABLE_NAME;
-const LEDGER_ENTRY_TABLE_NAME = process.env.LEDGER_ENTRY_TABLE_NAME;
-const ACCOUNT_STATUS_TABLE_NAME = process.env.ACCOUNT_STATUS_TABLE_NAME; // Will be added via CDK
-
 export const handler = async (event: AppSyncEvent): Promise<any> => {
-    console.log(`Received event: ${JSON.stringify(event)}`);
+  console.log(
+    "AdminDataActionsFunction event:",
+    JSON.stringify(event, null, 2)
+  );
 
-    if (!CURRENT_ACCT_TABLE_NAME || !LEDGER_ENTRY_TABLE_NAME || !ACCOUNT_STATUS_TABLE_NAME) {
-        console.error("Missing table name environment variables!");
-        throw new Error("Configuration error: Table names not set.");
+  // Optional: Double-check admin authorization if not solely relying on AppSync @auth directive
+  // if (!event.identity?.groups?.includes("Admin")) {
+  //   console.error("Unauthorized: Caller is not in Admin group based on event.identity.groups.");
+  //   throw new Error("Unauthorized"); // This will result in a GraphQL error
+  // }
+
+  const now = new Date().toISOString();
+  const adminSub = event.identity?.sub; // ID of the admin performing the action
+
+  switch (event.info.fieldName) {
+    case "adminAddCashReceipt": {
+      const { targetOwnerId, amount, description } = event.arguments;
+
+      if (!targetOwnerId || typeof amount !== "number") {
+        console.error("adminAddCashReceipt: Missing targetOwnerId or amount.");
+        throw new Error(
+          "Missing required arguments for adminAddCashReceipt: targetOwnerId and amount."
+        );
+      }
+
+      const newTransaction = {
+        id: ulid(),
+        owner: targetOwnerId,
+        type: "CASH_RECEIPT", // From CurrentAccountTransactionType enum
+        amount: amount,
+        description: description || null,
+        createdAt: now,
+        updatedAt: now,
+        createdByAdmin: adminSub, // Optional: track which admin
+        __typename: "CurrentAccountTransaction", // Helps AppSync map the response
+      };
+
+      try {
+        await ddbDocClient.send(
+          new PutCommand({
+            TableName: DDB_TABLE_TRANSACTIONS,
+            Item: newTransaction,
+            ConditionExpression: "attribute_not_exists(id)", // Prevent accidental overwrite
+          })
+        );
+        console.log("Successfully added cash receipt:", newTransaction);
+        return newTransaction; // Return the created CurrentAccountTransaction object
+      } catch (error: any) {
+        console.error("Error adding cash receipt to DynamoDB:", error);
+        throw new Error(`Failed to add cash receipt: ${error.message}`);
+      }
     }
 
-    const now = new Date().toISOString();
+    case "adminCreateAccountStatus": {
+      const { ownerId, initialUnapprovedInvoiceValue } = event.arguments;
 
-    // --- Handle adminCreateAccountStatus ---
-    if (event.info.fieldName === "adminCreateAccountStatus") {
-        if (!event.arguments.ownerId) {
-            throw new Error("ownerId is required for adminCreateAccountStatus.");
-        }
+      if (!ownerId || typeof initialUnapprovedInvoiceValue !== "number") {
+        console.error(
+          "adminCreateAccountStatus: Missing ownerId or initialUnapprovedInvoiceValue."
+        );
+        throw new Error(
+          "Missing required arguments for adminCreateAccountStatus: ownerId and initialUnapprovedInvoiceValue."
+        );
+      }
 
-        const accountStatusId = event.arguments.ownerId; // Using owner's sub as the AccountStatus ID
-        const owner = event.arguments.ownerId;
-        const totalUnapprovedInvoiceValue = event.arguments.initialUnapprovedInvoiceValue ?? 0;
+      const newAccountStatus = {
+        id: ownerId, // AccountStatus ID is the owner's ID (sub)
+        owner: ownerId,
+        totalUnapprovedInvoiceValue: initialUnapprovedInvoiceValue,
+        createdAt: now,
+        updatedAt: now,
+        createdByAdmin: adminSub, // Optional: track which admin
+        __typename: "AccountStatus", // Helps AppSync map the response
+      };
 
-        const newAccountStatus = {
-            id: accountStatusId,
-            owner: owner,
-            totalUnapprovedInvoiceValue: totalUnapprovedInvoiceValue,
-            createdAt: now,
-            updatedAt: now,
-        };
-
-        const params = {
-            TableName: ACCOUNT_STATUS_TABLE_NAME,
+      try {
+        await ddbDocClient.send(
+          new PutCommand({
+            TableName: DDB_TABLE_ACCOUNT_STATUS,
             Item: newAccountStatus,
-            // ConditionExpression: "attribute_not_exists(id)" // Optional: prevent overwriting
-        };
-
-        console.log("Attempting to create AccountStatus with params:", params);
-        try {
-            await docClient.send(new PutCommand(params));
-            console.log("AccountStatus created successfully:", newAccountStatus);
-            return newAccountStatus; // Return the created object
-        } catch (error) {
-            console.error("Error creating AccountStatus:", error);
-            throw new Error(`Could not create AccountStatus: ${error.message}`);
-        }
+            // No ConditionExpression means it will create or overwrite
+          })
+        );
+        console.log(
+          "Successfully created/updated account status:",
+          newAccountStatus
+        );
+        return newAccountStatus; // Return the created/updated AccountStatus object
+      } catch (error: any) {
+        console.error(
+          "Error creating/updating account status in DynamoDB:",
+          error
+        );
+        throw new Error(
+          `Failed to create/update account status: ${error.message}`
+        );
+      }
     }
 
-    // --- Handle adminAddCashReceipt (existing logic) ---
-    else if (event.info.fieldName === "adminAddCashReceipt") {
-        if (!event.arguments.targetOwnerId || typeof event.arguments.amount !== 'number') {
-            throw new Error("targetOwnerId and amount are required for adminAddCashReceipt.");
-        }
+    case "adminRequestPaymentForUser": {
+      const paymentInput = event.arguments.input;
+      if (
+        !paymentInput ||
+        !paymentInput.targetUserId ||
+        typeof paymentInput.amount !== "number"
+      ) {
+        console.error(
+          "adminRequestPaymentForUser: Missing input, input.targetUserId, or input.amount."
+        );
+        throw new Error(
+          "Missing required arguments for adminRequestPaymentForUser: input.targetUserId and input.amount."
+        );
+      }
 
-        const transactionId = randomUUID();
-        const cashReceiptLedgerEntryId = randomUUID(); // Separate ID for LedgerEntry
+      const { targetUserId: paymentTargetUser, amount: paymentAmount } =
+        paymentInput;
 
-        const currentAccountTransaction = {
-            id: transactionId,
-            owner: event.arguments.targetOwnerId,
-            type: "CASH_RECEIPT", // From CurrentAccountTransactionType enum
-            amount: event.arguments.amount,
-            description: event.arguments.description || "Cash receipt by admin",
-            createdAt: now,
-            updatedAt: now,
-        };
+      // TODO: Implement your actual payment request logic.
+      // This might involve:
+      // 1. Checking target user's available funds (may require DynamoDB Get/Query on AccountStatus or Transactions).
+      //    (Ensure this Lambda has read permissions if so).
+      // 2. Creating a 'PAYMENT_REQUEST' transaction in DDB_TABLE_TRANSACTIONS.
+      // 3. Sending an email notification via SES (Lambda would need SES permissions).
+      // 4. Integrating with a payment gateway if applicable.
 
-        const ledgerEntryCashReceipt = {
-            id: cashReceiptLedgerEntryId,
-            owner: event.arguments.targetOwnerId,
-            type: "CASH_RECEIPT", // From LedgerEntryType enum
-            amount: event.arguments.amount,
-            description: `Ref: ${transactionId} - ${event.arguments.description || "Cash receipt by admin"}`,
-            createdAt: now,
-            updatedAt: now,
-        };
+      console.log(
+        `Admin (${adminSub}) initiating payment request of ${paymentAmount} for user ${paymentTargetUser}. (Placeholder logic)`
+      );
+      
+      // Example of creating a PAYMENT_REQUEST transaction:
+      const paymentRequestTransaction = {
+        id: ulid(),
+        owner: paymentTargetUser,
+        type: "PAYMENT_REQUEST", // From CurrentAccountTransactionType enum
+        amount: paymentAmount,
+        description: `Admin-initiated payment request by ${adminSub}`,
+        createdAt: now,
+        updatedAt: now,
+        createdByAdmin: adminSub,
+        __typename: "CurrentAccountTransaction"
+      };
 
-        const transactionParams = {
-            TableName: CURRENT_ACCT_TABLE_NAME,
-            Item: currentAccountTransaction,
-        };
-        const ledgerParams = {
-            TableName: LEDGER_ENTRY_TABLE_NAME,
-            Item: ledgerEntryCashReceipt,
-        };
-
-        try {
-            console.log("Adding CurrentAccountTransaction:", currentAccountTransaction);
-            await docClient.send(new PutCommand(transactionParams));
-            console.log("Adding LedgerEntry for cash receipt:", ledgerEntryCashReceipt);
-            await docClient.send(new PutCommand(ledgerParams));
-            console.log("adminAddCashReceipt successful.");
-            return currentAccountTransaction; // Return the CurrentAccountTransaction object
-        } catch (error) {
-            console.error("Error in adminAddCashReceipt:", error);
-            throw new Error(`Could not process adminAddCashReceipt: ${error.message}`);
-        }
+      try {
+        await ddbDocClient.send(
+          new PutCommand({
+            TableName: DDB_TABLE_TRANSACTIONS,
+            Item: paymentRequestTransaction,
+          })
+        );
+        console.log("PAYMENT_REQUEST transaction created:", paymentRequestTransaction);
+        // Your GraphQL schema for adminRequestPaymentForUser returns String.
+        // If you want to return the transaction object, you'd change the schema.
+        return `Admin successfully initiated payment request for ${paymentAmount} for user ${paymentTargetUser}. Transaction ID: ${paymentRequestTransaction.id}`;
+      } catch (dbError: any) {
+        console.error("Error creating PAYMENT_REQUEST transaction:", dbError);
+        // Even if transaction logging fails, the "request" might have other steps.
+        // Decide how to handle partial failures.
+        throw new Error(`Failed to log payment request transaction: ${dbError.message}`);
+      }
     }
 
-    // --- Add other admin actions here if needed ---
-    else {
-        console.error(`Unknown field, unable to resolve ${event.info.fieldName}`);
-        throw new Error(`Unknown field, unable to resolve ${event.info.fieldName}`);
-    }
+    default:
+      console.error("Unknown admin action in AdminDataActionsFunction:", event.info.fieldName);
+      throw new Error(`Unsupported admin action: ${event.info.fieldName}`);
+  }
 };

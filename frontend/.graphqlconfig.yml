@@ -1,18 +1,25 @@
+# frontend/.graphqlconfig.yml
 projects:
-  SalesLedgerAppFrontend:
-    schemaPath: schema.json
+  "Codegen Project":
+    schemaPath: "schema.graphql" 
     includes:
-      - src/graphql/**/*.graphql
+      # If you have no .graphql files where you manually define operations, 
+      # you can try an empty array or a pattern that won't find anything unintended.
+      # This tells codegen to primarily use the schema to generate everything.
+      - "src/DOES_NOT_EXIST_intentionally_empty_for_schema_driven_codegen/**/*.graphql"
     excludes:
       - ./amplify/**
-    extensions:
+      - src/aws-exports.js 
+      - src/models/** extensions:
       amplify:
         codeGenTarget: typescript
-        generatedFileName: src/API.ts
-        docsFilePath: src/graphql
+        generatedFileName: src/graphql/API.ts # All types and operations here
+        # docsFilePath can be removed if everything goes into generatedFileName
+        region: eu-west-1
+        # apiId: mglrg2nkw5dereoh7q3cyuv65m # Can be commented out if schemaPath is definitive
         frontend: typescript
         framework: react
-        maxDepth: 3
+        maxDepth: 3 
 extensions:
   amplify:
     version: 3
