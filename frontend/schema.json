@@ -1,4 +1,5 @@
 {
+    "data": {
         "__schema": {
             "queryType": {
                 "name": "Query"
@@ -114,7 +115,7 @@
                         },
                         {
                             "name": "listAccountStatuses",
-                            "description": null,
+                            "description": "  Note: The 'owner: String' argument here might be redundant if your VTL for listAccountStatuses relies on 'filter.owner.eq'",
                             "args": [
                                 {
                                     "name": "owner",
@@ -237,7 +238,7 @@
                         },
                         {
                             "name": "adminListUsers",
-                            "description": "  NEW Admin Query",
+                            "description": "  Admin Query",
                             "args": [
                                 {
                                     "name": "limit",
@@ -541,6 +542,16 @@
                         },
                         {
                             "name": "type",
+                            "description": "  Used by VTL to filter by owner",
+                            "type": {
+                                "kind": "INPUT_OBJECT",
+                                "name": "ModelStringFilterInput",
+                                "ofType": null
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "createdAt",
                             "description": null,
                             "type": {
                                 "kind": "INPUT_OBJECT",
@@ -814,7 +825,7 @@
                         },
                         {
                             "name": "totalUnapprovedInvoiceValue",
-                            "description": null,
+                            "description": "  Used by VTL to filter by owner",
                             "type": {
                                 "kind": "INPUT_OBJECT",
                                 "name": "ModelFloatFilterInput",
@@ -1107,6 +1118,16 @@
                         },
                         {
                             "name": "type",
+                            "description": "  Used by VTL to filter by owner",
+                            "type": {
+                                "kind": "INPUT_OBJECT",
+                                "name": "ModelStringFilterInput",
+                                "ofType": null
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "createdAt",
                             "description": null,
                             "type": {
                                 "kind": "INPUT_OBJECT",
@@ -1349,7 +1370,7 @@
                         },
                         {
                             "name": "updateLedgerEntry",
-                            "description": null,
+                            "description": "  VTL for this sets owner to $context.identity.sub (user's own)",
                             "args": [
                                 {
                                     "name": "input",
@@ -1376,7 +1397,7 @@
                         },
                         {
                             "name": "deleteLedgerEntry",
-                            "description": null,
+                            "description": "  VTL for this needs to ensure non-admins can only update their own",
                             "args": [
                                 {
                                     "name": "id",
@@ -1402,8 +1423,35 @@
                             "deprecationReason": null
                         },
                         {
+                            "name": "adminCreateLedgerEntry",
+                            "description": "  VTL for this needs to ensure non-admins can only delete their own\n --- NEW: Admin mutation to create LedgerEntry for a specific user ---",
+                            "args": [
+                                {
+                                    "name": "input",
+                                    "description": null,
+                                    "type": {
+                                        "kind": "NON_NULL",
+                                        "name": null,
+                                        "ofType": {
+                                            "kind": "INPUT_OBJECT",
+                                            "name": "AdminCreateLedgerEntryInput",
+                                            "ofType": null
+                                        }
+                                    },
+                                    "defaultValue": null
+                                }
+                            ],
+                            "type": {
+                                "kind": "OBJECT",
+                                "name": "LedgerEntry",
+                                "ofType": null
+                            },
+                            "isDeprecated": false,
+                            "deprecationReason": null
+                        },
+                        {
                             "name": "updateAccountStatus",
-                            "description": "  AccountStatus Admin Mutation",
+                            "description": "  Only Admins can call this\n AccountStatus Admin Mutation",
                             "args": [
                                 {
                                     "name": "input",
@@ -1416,6 +1464,43 @@
                                             "name": "UpdateAccountStatusInput",
                                             "ofType": null
                                         }
+                                    },
+                                    "defaultValue": null
+                                }
+                            ],
+                            "type": {
+                                "kind": "OBJECT",
+                                "name": "AccountStatus",
+                                "ofType": null
+                            },
+                            "isDeprecated": false,
+                            "deprecationReason": null
+                        },
+                        {
+                            "name": "adminCreateAccountStatus",
+                            "description": "  Admin updates status using input.id as target",
+                            "args": [
+                                {
+                                    "name": "ownerId",
+                                    "description": null,
+                                    "type": {
+                                        "kind": "NON_NULL",
+                                        "name": null,
+                                        "ofType": {
+                                            "kind": "SCALAR",
+                                            "name": "String",
+                                            "ofType": null
+                                        }
+                                    },
+                                    "defaultValue": null
+                                },
+                                {
+                                    "name": "initialUnapprovedInvoiceValue",
+                                    "description": null,
+                                    "type": {
+                                        "kind": "SCALAR",
+                                        "name": "Float",
+                                        "ofType": null
                                     },
                                     "defaultValue": null
                                 }
@@ -1481,7 +1566,7 @@
                         },
                         {
                             "name": "sendPaymentRequestEmail",
-                            "description": null,
+                            "description": "  Admin adds cash receipt for targetOwnerId\n Payment Request Mutations",
                             "args": [
                                 {
                                     "name": "amount",
@@ -1507,37 +1592,27 @@
                             "deprecationReason": null
                         },
                         {
-                            "name": "adminCreateAccountStatus",
-                            "description": "  Inside your 'type Mutation @aws_cognito_user_pools { ... }' block\n ... existing mutations ...\n NEW Admin Mutation to create AccountStatus",
+                            "name": "adminRequestPaymentForUser",
+                            "description": "  This is for the logged-in user requesting for themselves\n --- NEW: Admin mutation to request payment for a specific user ---",
                             "args": [
                                 {
-                                    "name": "ownerId",
+                                    "name": "input",
                                     "description": null,
                                     "type": {
                                         "kind": "NON_NULL",
                                         "name": null,
                                         "ofType": {
-                                            "kind": "SCALAR",
-                                            "name": "String",
+                                            "kind": "INPUT_OBJECT",
+                                            "name": "AdminRequestPaymentForUserInput",
                                             "ofType": null
                                         }
-                                    },
-                                    "defaultValue": null
-                                },
-                                {
-                                    "name": "initialUnapprovedInvoiceValue",
-                                    "description": null,
-                                    "type": {
-                                        "kind": "SCALAR",
-                                        "name": "Float",
-                                        "ofType": null
                                     },
                                     "defaultValue": null
                                 }
                             ],
                             "type": {
-                                "kind": "OBJECT",
-                                "name": "AccountStatus",
+                                "kind": "SCALAR",
+                                "name": "String",
                                 "ofType": null
                             },
                             "isDeprecated": false,
@@ -1655,6 +1730,69 @@
                 },
                 {
                     "kind": "INPUT_OBJECT",
+                    "name": "AdminCreateLedgerEntryInput",
+                    "description": "  --- NEW: Input Type for Admin Creating Ledger Entry for a User ---",
+                    "fields": null,
+                    "inputFields": [
+                        {
+                            "name": "type",
+                            "description": null,
+                            "type": {
+                                "kind": "NON_NULL",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "ENUM",
+                                    "name": "LedgerEntryType",
+                                    "ofType": null
+                                }
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "amount",
+                            "description": null,
+                            "type": {
+                                "kind": "NON_NULL",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "Float",
+                                    "ofType": null
+                                }
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "description",
+                            "description": null,
+                            "type": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "targetUserId",
+                            "description": null,
+                            "type": {
+                                "kind": "NON_NULL",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "ID",
+                                    "ofType": null
+                                }
+                            },
+                            "defaultValue": null
+                        }
+                    ],
+                    "interfaces": null,
+                    "enumValues": null,
+                    "possibleTypes": null
+                },
+                {
+                    "kind": "INPUT_OBJECT",
                     "name": "UpdateAccountStatusInput",
                     "description": null,
                     "fields": null,
@@ -1675,11 +1813,50 @@
                         },
                         {
                             "name": "totalUnapprovedInvoiceValue",
-                            "description": null,
+                            "description": "  Should be the ID (sub) of the user whose status is being updated",
                             "type": {
                                 "kind": "SCALAR",
                                 "name": "Float",
                                 "ofType": null
+                            },
+                            "defaultValue": null
+                        }
+                    ],
+                    "interfaces": null,
+                    "enumValues": null,
+                    "possibleTypes": null
+                },
+                {
+                    "kind": "INPUT_OBJECT",
+                    "name": "AdminRequestPaymentForUserInput",
+                    "description": "  --- NEW: Input Type for Admin Requesting Payment for a User ---",
+                    "fields": null,
+                    "inputFields": [
+                        {
+                            "name": "targetUserId",
+                            "description": null,
+                            "type": {
+                                "kind": "NON_NULL",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "ID",
+                                    "ofType": null
+                                }
+                            },
+                            "defaultValue": null
+                        },
+                        {
+                            "name": "amount",
+                            "description": null,
+                            "type": {
+                                "kind": "NON_NULL",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "Float",
+                                    "ofType": null
+                                }
                             },
                             "defaultValue": null
                         }
@@ -1695,7 +1872,7 @@
                     "fields": [
                         {
                             "name": "onCreateLedgerEntry",
-                            "description": "  Add default auth for subscription connections",
+                            "description": null,
                             "args": [
                                 {
                                     "name": "owner",
@@ -2604,15 +2781,16 @@
                     "onField": true
                 },
                 {
-                    "name": "aws_publish",
-                    "description": "Tells the service which subscriptions will be published to when this mutation is called. This directive is deprecated use @aws_susbscribe directive instead.",
+                    "name": "aws_cognito_user_pools",
+                    "description": "Tells the service this field/object has access authorized by a Cognito User Pools token.",
                     "locations": [
+                        "OBJECT",
                         "FIELD_DEFINITION"
                     ],
                     "args": [
                         {
-                            "name": "subscriptions",
-                            "description": "List of subscriptions which will be published to when this mutation is called.",
+                            "name": "cognito_groups",
+                            "description": "List of cognito user pool groups which have access on this field",
                             "type": {
                                 "kind": "LIST",
                                 "name": null,
@@ -2625,91 +2803,6 @@
                             "defaultValue": null
                         }
                     ],
-                    "onOperation": false,
-                    "onFragment": false,
-                    "onField": false
-                },
-                {
-                    "name": "deprecated",
-                    "description": null,
-                    "locations": [
-                        "FIELD_DEFINITION",
-                        "ENUM_VALUE"
-                    ],
-                    "args": [
-                        {
-                            "name": "reason",
-                            "description": null,
-                            "type": {
-                                "kind": "SCALAR",
-                                "name": "String",
-                                "ofType": null
-                            },
-                            "defaultValue": "\"No longer supported\""
-                        }
-                    ],
-                    "onOperation": false,
-                    "onFragment": false,
-                    "onField": false
-                },
-                {
-                    "name": "aws_lambda",
-                    "description": "Tells the service this field/object has access authorized by a Lambda Authorizer.",
-                    "locations": [
-                        "OBJECT",
-                        "FIELD_DEFINITION"
-                    ],
-                    "args": [],
-                    "onOperation": false,
-                    "onFragment": false,
-                    "onField": false
-                },
-                {
-                    "name": "aws_oidc",
-                    "description": "Tells the service this field/object has access authorized by an OIDC token.",
-                    "locations": [
-                        "OBJECT",
-                        "FIELD_DEFINITION"
-                    ],
-                    "args": [],
-                    "onOperation": false,
-                    "onFragment": false,
-                    "onField": false
-                },
-                {
-                    "name": "aws_subscribe",
-                    "description": "Tells the service which mutation triggers this subscription.",
-                    "locations": [
-                        "FIELD_DEFINITION"
-                    ],
-                    "args": [
-                        {
-                            "name": "mutations",
-                            "description": "List of mutations which will trigger this subscription when they are called.",
-                            "type": {
-                                "kind": "LIST",
-                                "name": null,
-                                "ofType": {
-                                    "kind": "SCALAR",
-                                    "name": "String",
-                                    "ofType": null
-                                }
-                            },
-                            "defaultValue": null
-                        }
-                    ],
-                    "onOperation": false,
-                    "onFragment": false,
-                    "onField": false
-                },
-                {
-                    "name": "aws_api_key",
-                    "description": "Tells the service this field/object has access authorized by an API key.",
-                    "locations": [
-                        "OBJECT",
-                        "FIELD_DEFINITION"
-                    ],
-                    "args": [],
                     "onOperation": false,
                     "onFragment": false,
                     "onField": false
@@ -2753,16 +2846,15 @@
                     "onField": false
                 },
                 {
-                    "name": "aws_cognito_user_pools",
-                    "description": "Tells the service this field/object has access authorized by a Cognito User Pools token.",
+                    "name": "aws_subscribe",
+                    "description": "Tells the service which mutation triggers this subscription.",
                     "locations": [
-                        "OBJECT",
                         "FIELD_DEFINITION"
                     ],
                     "args": [
                         {
-                            "name": "cognito_groups",
-                            "description": "List of cognito user pool groups which have access on this field",
+                            "name": "mutations",
+                            "description": "List of mutations which will trigger this subscription when they are called.",
                             "type": {
                                 "kind": "LIST",
                                 "name": null,
@@ -2778,7 +2870,93 @@
                     "onOperation": false,
                     "onFragment": false,
                     "onField": false
+                },
+                {
+                    "name": "deprecated",
+                    "description": null,
+                    "locations": [
+                        "FIELD_DEFINITION",
+                        "ENUM_VALUE"
+                    ],
+                    "args": [
+                        {
+                            "name": "reason",
+                            "description": null,
+                            "type": {
+                                "kind": "SCALAR",
+                                "name": "String",
+                                "ofType": null
+                            },
+                            "defaultValue": "\"No longer supported\""
+                        }
+                    ],
+                    "onOperation": false,
+                    "onFragment": false,
+                    "onField": false
+                },
+                {
+                    "name": "aws_publish",
+                    "description": "Tells the service which subscriptions will be published to when this mutation is called. This directive is deprecated use @aws_susbscribe directive instead.",
+                    "locations": [
+                        "FIELD_DEFINITION"
+                    ],
+                    "args": [
+                        {
+                            "name": "subscriptions",
+                            "description": "List of subscriptions which will be published to when this mutation is called.",
+                            "type": {
+                                "kind": "LIST",
+                                "name": null,
+                                "ofType": {
+                                    "kind": "SCALAR",
+                                    "name": "String",
+                                    "ofType": null
+                                }
+                            },
+                            "defaultValue": null
+                        }
+                    ],
+                    "onOperation": false,
+                    "onFragment": false,
+                    "onField": false
+                },
+                {
+                    "name": "aws_api_key",
+                    "description": "Tells the service this field/object has access authorized by an API key.",
+                    "locations": [
+                        "OBJECT",
+                        "FIELD_DEFINITION"
+                    ],
+                    "args": [],
+                    "onOperation": false,
+                    "onFragment": false,
+                    "onField": false
+                },
+                {
+                    "name": "aws_oidc",
+                    "description": "Tells the service this field/object has access authorized by an OIDC token.",
+                    "locations": [
+                        "OBJECT",
+                        "FIELD_DEFINITION"
+                    ],
+                    "args": [],
+                    "onOperation": false,
+                    "onFragment": false,
+                    "onField": false
+                },
+                {
+                    "name": "aws_lambda",
+                    "description": "Tells the service this field/object has access authorized by a Lambda Authorizer.",
+                    "locations": [
+                        "OBJECT",
+                        "FIELD_DEFINITION"
+                    ],
+                    "args": [],
+                    "onOperation": false,
+                    "onFragment": false,
+                    "onField": false
                 }
             ]
         }
     }
+}

@@ -1,3 +1,5 @@
+# this is an auto generated file. This will be overwritten
+
 subscription OnCreateLedgerEntry($owner: String) {
   onCreateLedgerEntry(owner: $owner) {
     id
