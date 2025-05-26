@@ -1,0 +1,51 @@
+## VTL Request Template for Mutation.adminCreateLedgerEntry
+## Allows an Admin to create a ledger entry for a specified targetUserId.
+
+#set( $input = $context.args.input )
+
+## Validate required input fields
+#if( $util.isNullOrBlank($input.targetUserId) )
+  $util.error("input.targetUserId is required.", "ValidationException")
+#end
+#if( $util.isNullOrBlank($input.type) )
+  $util.error("input.type is required.", "ValidationException")
+#end
+#if( $util.isNull($input.amount) ) ## Amount can be 0, so just check for null
+  $util.error("input.amount is required.", "ValidationException")
+#end
+
+## Prepare the item to be put into DynamoDB
+#set( $item = {
+    "id": $util.autoId(),
+    "owner": $input.targetUserId,  ## Set the owner to the target user
+    "type": $input.type,
+    "amount": $input.amount,
+    "createdAt": $util.time.nowISO8601(),
+    "updatedAt": $util.time.nowISO8601(),
+    "createdByAdmin": $context.identity.sub ## Optional: Record which admin created this.
+                                          ## If used, ensure "createdByAdmin: String" (or ID)
+                                          ## is added to your LedgerEntry type in schema.graphql
+})
+
+## Add description only if it's provided (it's optional in the input type)
+#if( $input.containsKey("description") )
+    $util.qr($item.put("description", $input.description))
+#else
+    ## If you want to ensure description is explicitly null if not provided, uncomment:
+    #*
+    $util.qr($item.put("description", null))
+    *#
+#end
+
+{
+    "version": "2018-05-29",
+    "operation": "PutItem",
+    ## The "key" field is not strictly necessary for PutItem if the primary key ("id")
+    ## is included in the "attributeValues" map, which $util.dynamodb.toMapValues($item) does.
+    "attributeValues": $util.dynamodb.toMapValues($item),
+    "condition": {
+        ## This condition ensures you don't accidentally overwrite an existing item
+        ## if the auto-generated ID somehow collides (extremely unlikely).
+        "expression": "attribute_not_exists(id)"
+    }
+}
