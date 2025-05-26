@@ -9,18 +9,18 @@ import {
   Loader,
   Card,
   Badge,
-  View, // Added View for better layout control if needed
-  Alert
+  View,
+  Alert, // Make sure Alert is imported
 } from '@aws-amplify/ui-react';
 
-// Import generated query and types
-import { AdminListUsersDocument } from './graphql/generated/graphql'; // Verify exact export name
-import type { CognitoUser, AdminListUsersQuery } from './graphql/generated/graphql'; // Verify exact export names
+// Corrected imports for GraphQL documents and types
+import { AdminListUsersDocument } from './graphql/queries'; // Assuming it's in queries.ts
+import type { CognitoUser, AdminListUsersQuery } from './API';   // Types from API.ts
 
 // Import child components
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
-import SalesLedger from './SalesLedger'; // <<< --- ADD THIS IMPORT
+import SalesLedger from './SalesLedger'; // Import the SalesLedger component
 
 const client = generateClient();
 const USERS_PER_PAGE = 10;
@@ -33,15 +33,13 @@ function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
   const fetchUsers = async (token: string | null = null) => {
-    if (isLoadingUsers && !token) return; // Allow fetching more even if initial load is happening for "Load More"
+    if (isLoadingUsers && !token) return;
     setIsLoadingUsers(true);
     setFetchError(null);
-    // Don't clear selectedUser here if just loading more. Clear when fetching initial list (token is null).
-    if (!token) { 
-        setSelectedUser(null); 
-        setUsers([]); // Clear previous users on initial fetch/refresh
+    if (!token) {
+      setSelectedUser(null);
+      setUsers([]);
     }
-
 
     console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
@@ -51,17 +49,17 @@ function AdminPage() {
           limit: USERS_PER_PAGE,
           nextToken: token
         },
-        authMode: 'userPool' // Ensure admin user has permissions for this query
+        authMode: 'userPool'
       });
+
+      if (response.errors) {
+        console.error("AdminPage: GraphQL errors while fetching users:", response.errors);
+        throw response.errors;
+      }
 
       const resultData = response.data?.adminListUsers;
       const fetchedUsers = resultData?.users?.filter(u => u !== null) as CognitoUser[] || [];
       const paginationToken = resultData?.nextToken ?? null;
-
-      if (response.errors) {
-        console.error("AdminPage: GraphQL errors while fetching users:", response.errors);
-        throw response.errors; // Let the catch block handle it
-      }
 
       setUsers(prevUsers => token ? [...prevUsers, ...fetchedUsers] : fetchedUsers);
       setNextToken(paginationToken);
@@ -69,9 +67,9 @@ function AdminPage() {
     } catch (err: any) {
       console.error("AdminPage: Error listing users:", err);
       let errorMessages = 'Unknown error listing users';
-      if (err.errors && Array.isArray(err.errors)) { // GraphQL errors array
+      if (err.errors && Array.isArray(err.errors)) {
         errorMessages = err.errors.map((e: any) => e.message).join(', ');
-      } else if (err.message) { // Standard JavaScript error
+      } else if (err.message) {
         errorMessages = err.message;
       }
       setFetchError(errorMessages);
@@ -85,7 +83,6 @@ function AdminPage() {
   }, []);
 
   const handleUserSelect = (user: CognitoUser) => {
-    // Toggle selection: if same user is clicked, deselect. Otherwise, select new user.
     setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
   };
 
@@ -94,13 +91,12 @@ function AdminPage() {
     return user.attributes.find(attr => attr?.name === attributeName)?.value ?? undefined;
   };
 
-  // Basic styles for HTML table
   const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' };
-  const thTdStyle: React.CSSProperties = { border: '1px solid #ccc', padding: '8px', textAlign: 'left' }; // Increased padding
+  const thTdStyle: React.CSSProperties = { border: '1px solid #ccc', padding: '8px', textAlign: 'left' };
   const selectedRowStyle: React.CSSProperties = { backgroundColor: '#e6f7ff', fontWeight: 'bold' };
 
   return (
-    <Flex direction="column" gap="large" padding="medium"> {/* Added padding to main Flex */}
+    <Flex direction="column" gap="large" padding="medium">
       <Heading level={2}>Admin Section</Heading>
       <Card variation="outlined">
         <Heading level={4} marginBottom="medium">Select User to Manage</Heading>
@@ -121,7 +117,7 @@ function AdminPage() {
                   <tr key="no-users-row"><td colSpan={5} style={{...thTdStyle, textAlign: 'center'}}><Text>No users found.</Text></td></tr>
               )}
               {users.map((user) => {
-                  if (!user || !user.sub) return null; // Ensure user and user.sub exist
+                  if (!user || !user.sub) return null;
                   return (
                     <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
                       <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
@@ -140,7 +136,7 @@ function AdminPage() {
                     </tr>
                   );
               })}
-              {isLoadingUsers && users.length === 0 && ( // Show loader only if loading initial list
+              {isLoadingUsers && users.length === 0 && (
                   <tr key="loader-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td></tr>
               )}
             </tbody>
@@ -149,20 +145,19 @@ function AdminPage() {
         {nextToken && !isLoadingUsers && (
           <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
-         {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>} {/* Loader for "Load More" */}
+         {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>}
       </Card>
 
-      <View marginTop="large"> {/* Changed from div to View for consistency */}
-        {selectedUser && selectedUser.sub ? ( // Ensure selectedUser and selectedUser.sub exist
+      <View marginTop="large">
+        {selectedUser && selectedUser.sub ? (
           <>
-            <Heading level={3} marginBottom="medium"> {/* Changed to level 3 */}
-              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username} 
+            <Heading level={3} marginBottom="medium">
+              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username}
               <Text as="span" fontSize="small" color="font.tertiary"> (ID: {selectedUser.sub})</Text>
             </Heading>
             
-            <Flex direction="column" gap="large"> {/* Increased gap for sections */}
-              {/* Existing Action Components */}
-              <Card variation="elevated"> {/* Optional: Wrap in Card */}
+            <Flex direction="column" gap="large">
+              <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
                 <ManageAccountStatus 
                     selectedOwnerSub={selectedUser.sub} 
@@ -170,20 +165,18 @@ function AdminPage() {
                 />
               </Card>
               
-              <Card variation="elevated"> {/* Optional: Wrap in Card */}
+              <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
                 <AddCashReceiptForm selectedTargetSub={selectedUser.sub} />
               </Card>
 
-              {/* --- NEW: Display Sales Ledger for the selected user --- */}
-              <Card variation="elevated" marginTop="medium"> {/* Optional: Wrap in Card, added marginTop */}
-                <Heading level={4} marginBottom="small">Ledger Details</Heading> {/* Changed to level 4 */}
+              <Card variation="elevated" marginTop="medium">
+                <Heading level={4} marginBottom="small">Ledger Details</Heading>
                 <SalesLedger 
                   targetUserId={selectedUser.sub} 
-                  isAdmin={true} // Explicitly pass true as this is the AdminPage
+                  isAdmin={true} 
                 />
               </Card>
-              {/* --- END NEW --- */}
             </Flex>
           </>
         ) : (
