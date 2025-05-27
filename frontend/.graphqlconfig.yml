@@ -1,27 +1,21 @@
 # frontend/.graphqlconfig.yml
 projects:
-  "Codegen Project": # You can rename "Codegen Project" if needed, e.g., to your API name
+  "Codegen Project": # Or your actual project name key from previous configs
     schemaPath: "schema.graphql" # Ensure frontend/schema.graphql exists and is up-to-date
     includes:
-      # This pattern tells codegen to look for operations within your TS/TSX files if you use gql tags.
-      # If you don't use gql tags for operations, and rely on schema-only generation,
-      # this can also be an empty array: []
-      # For comprehensive generation from schema, this is a good default:
-      - "src/**/*.ts"
-      - "src/**/*.tsx"
+      - "src/graphql/operations/**/*.graphql" # Point to your new .graphql operation files
     excludes:
       - ./amplify/**
       - "src/models/**" # If you use DataStore
       - "src/aws-exports.js" # If it exists
-      - "src/graphql/API.ts" # Exclude the output file from being an input
+      - "src/graphql/API.ts" # Exclude the output file itself
     extensions:
       amplify:
         codeGenTarget: typescript
-        generatedFileName: src/graphql/API.ts # All generated code here
-        # docsFilePath should be commented out or removed to consolidate into generatedFileName
-        # docsFilePath: src/graphql 
-        region: eu-west-1 # Your AWS region for the AppSync API
-        apiId: mglrg2nkw5dereoh7q3cyuv65m # Your AppSync API ID
+        generatedFileName: "src/graphql/API.ts" # All generated TS types AND operation documents here
+        # docsFilePath can be removed if everything goes into generatedFileName
+        region: "eu-west-1" 
+        apiId: "mglrg2nkw5dereoh7q3cyuv65m" # Good to keep for reference/introspection fallback
         frontend: typescript
         framework: react
         maxDepth: 3 

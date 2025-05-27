@@ -1,0 +1,52 @@
+fragment LedgerEntryFields on LedgerEntry {
+  id
+  owner
+  type
+  amount
+  description
+  createdAt
+  updatedAt
+  __typename
+  # createdByAdmin # Uncomment if you added this to your schema and Lambda
+}
+
+fragment AccountStatusFields on AccountStatus {
+  id
+  owner
+  totalUnapprovedInvoiceValue
+  createdAt
+  updatedAt
+  __typename
+  # createdByAdmin # Uncomment if you added this
+}
+
+fragment CurrentAccountTransactionFields on CurrentAccountTransaction {
+  id
+  owner
+  type
+  amount
+  description
+  createdAt
+  updatedAt
+  __typename
+  # createdByAdmin # Uncomment if you added this
+}
+
+fragment UserAttributeFields on UserAttribute {
+  name
+  value
+  __typename
+}
+
+fragment CognitoUserFields on CognitoUser {
+  username
+  sub
+  status
+  enabled
+  createdAt
+  updatedAt
+  attributes {
+    ...UserAttributeFields
+  }
+  __typename
+}

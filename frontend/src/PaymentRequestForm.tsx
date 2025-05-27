@@ -1,12 +1,14 @@
 // src/PaymentRequestForm.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { Button, TextField, Flex, Alert, Text, View, Heading } from '@aws-amplify/ui-react';
 
 interface PaymentRequestFormProps {
   netAvailability: number;
-  onSubmitRequest: (amount: number) => Promise<void>; // Function to call API
-  isLoading: boolean; // Is the submission in progress?
+  onSubmitRequest: (amount: number) => Promise<void>; // Made async to align with typical API calls
+  isLoading: boolean;
   requestError: string | null;
   requestSuccess: string | null;
+  disabled?: boolean;
 }
 
 function PaymentRequestForm({
@@ -14,90 +16,57 @@ function PaymentRequestForm({
   onSubmitRequest,
   isLoading,
   requestError,
-  requestSuccess
+  requestSuccess,
+  disabled = false
 }: PaymentRequestFormProps) {
   const [amount, setAmount] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Format netAvailability for display
-  const formattedMaxAmount = netAvailability.toFixed(2);
-
-  useEffect(() => {
-    // Clear input on successful submission
-    if (requestSuccess) {
-      setAmount('');
-    }
-  }, [requestSuccess]);
-
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const requested = parseFloat(e.target.value);
-    setAmount(e.target.value); // Keep input as string for controlled component
-
-    if (isNaN(requested)) {
-        setValidationError('Please enter a valid number.');
-    } else if (requested <= 0) {
-      setValidationError('Amount must be positive.');
-    } else if (requested > netAvailability) {
-      setValidationError(`Amount cannot exceed Net Availability (£${formattedMaxAmount}).`);
-    } else {
-      setValidationError(null); // Clear error if valid
-    }
-  };
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const requestedAmount = parseFloat(amount);
+    setValidationError(null);
+    const numericAmount = parseFloat(amount);
 
-    // Final validation check on submit
-    if (validationError || isNaN(requestedAmount) || requestedAmount <= 0) {
-        alert(`Please fix the errors before submitting. ${validationError || ''}`);
-        return;
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      setValidationError('Please enter a valid positive amount.');
+      return;
     }
-    if (requestedAmount > netAvailability) {
-        alert(`Amount cannot exceed Net Availability (£${formattedMaxAmount}).`);
-        return;
+    if (numericAmount > netAvailability) {
+      setValidationError(`Amount cannot exceed Net Availability (£${netAvailability.toFixed(2)}).`);
+      return;
     }
 
-    // Call the async submit handler passed from the parent
-    await onSubmitRequest(requestedAmount);
+    await onSubmitRequest(numericAmount); // Call parent handler
+    setAmount(''); // Clear amount on successful submission attempt
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ border: '1px solid #007bff', padding: '15px', margin: '20px 0', backgroundColor: '#f0f8ff' }}>
-      <h4>Request Payment</h4>
-      <p>Net Availability: £{formattedMaxAmount}</p>
-      <div>
-        <label htmlFor="payment-request-amount" style={{ marginRight: '10px' }}>
-          Request Amount (£):
-        </label>
-        <input
-          id="payment-request-amount"
+    <View as="form" onSubmit={handleSubmit} marginTop="medium" border="1px solid #ddd" padding="medium">
+      <Heading level={5} marginBottom="small">Request Payment</Heading>
+      <Text fontSize="small" color="font.secondary" marginBottom="small">
+        Net Available for Request: £{netAvailability.toFixed(2)}
+      </Text>
+      {validationError && <Alert variation="error" marginBottom="small" isDismissible={true} onDismiss={()=>setValidationError(null)}>{validationError}</Alert>}
+      {requestError && <Alert variation="error" marginBottom="small">{requestError}</Alert>}
+      {requestSuccess && <Alert variation="success" marginBottom="small">{requestSuccess}</Alert>}
+      <Flex direction="column" gap="small">
+        <TextField
+          label="Amount to Request (£):"
           type="number"
           step="0.01"
           min="0.01"
-          max={netAvailability.toFixed(2)} // Set max attribute
+          max={netAvailability.toFixed(2)}
           value={amount}
-          onChange={handleAmountChange}
+          onChange={(e) => setAmount(e.target.value)}
           required
-          placeholder="e.g., 500.00"
-          style={{ width: '150px' }}
-          disabled={isLoading}
+          disabled={isLoading || disabled}
+          placeholder="e.g., 100.00"
         />
-      </div>
-      {validationError && <p style={{ color: 'red', marginTop: '5px' }}>{validationError}</p>}
-
-      <button
-        type="submit"
-        style={{ marginTop: '15px' }}
-        disabled={isLoading || !!validationError || amount === ''} // Disable if loading, error, or empty
-      >
-        {isLoading ? 'Submitting...' : 'Submit Payment Request'}
-      </button>
-
-      {/* Display Success/Error messages */}
-      {requestSuccess && <p style={{ color: 'green', marginTop: '10px' }}>{requestSuccess}</p>}
-      {requestError && <p style={{ color: 'red', marginTop: '10px' }}>{requestError}</p>}
-    </form>
+        <Button type="submit" variation="primary" isLoading={isLoading} disabled={isLoading || disabled || netAvailability <= 0}>
+          Submit Payment Request
+        </Button>
+      </Flex>
+    </View>
   );
 }
 

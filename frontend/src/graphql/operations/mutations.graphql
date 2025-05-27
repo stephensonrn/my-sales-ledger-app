@@ -1,0 +1,69 @@
+#import "./fragments.graphql"
+
+mutation CreateLedgerEntry($input: CreateLedgerEntryInput!) {
+  createLedgerEntry(input: $input) {
+    ...LedgerEntryFields
+  }
+}
+
+mutation UpdateLedgerEntry($input: UpdateLedgerEntryInput!) {
+  updateLedgerEntry(input: $input) {
+    ...LedgerEntryFields
+  }
+}
+
+mutation DeleteLedgerEntry($id: ID!) {
+  deleteLedgerEntry(id: $id) {
+    ...LedgerEntryFields
+  }
+}
+
+mutation AdminCreateLedgerEntry( # Renamed from adminCreateLedgerEntryForUser for consistency
+  $input: AdminCreateLedgerEntryInput!
+) {
+  adminCreateLedgerEntry(input: $input) {
+    ...LedgerEntryFields
+  }
+}
+
+mutation UpdateAccountStatus($input: UpdateAccountStatusInput!) {
+  updateAccountStatus(input: $input) {
+    ...AccountStatusFields
+  }
+}
+
+mutation AdminCreateAccountStatus(
+  $ownerId: String!
+  $initialUnapprovedInvoiceValue: Float # Made optional to match common usage
+) {
+  adminCreateAccountStatus(
+    ownerId: $ownerId
+    initialUnapprovedInvoiceValue: $initialUnapprovedInvoiceValue
+  ) {
+    ...AccountStatusFields
+  }
+}
+
+mutation AdminAddCashReceipt(
+  $targetOwnerId: String!
+  $amount: Float!
+  $description: String
+) {
+  adminAddCashReceipt(
+    targetOwnerId: $targetOwnerId
+    amount: $amount
+    description: $description
+  ) {
+    ...CurrentAccountTransactionFields
+  }
+}
+
+mutation SendPaymentRequestEmail($amount: Float!) {
+  sendPaymentRequestEmail(amount: $amount)
+}
+
+mutation AdminRequestPaymentForUser(
+  $input: AdminRequestPaymentForUserInput!
+) {
+  adminRequestPaymentForUser(input: $input)
+}

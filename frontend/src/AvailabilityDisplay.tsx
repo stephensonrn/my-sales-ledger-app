@@ -1,17 +1,13 @@
 // src/AvailabilityDisplay.tsx
 import React from 'react';
+import { Flex, Text, Card, Heading, Grid } from '@aws-amplify/ui-react';
 
 interface AvailabilityDisplayProps {
   grossAvailability: number;
   netAvailability: number;
-  currentSalesLedgerBalance: number; // Pass this for context if needed
+  currentSalesLedgerBalance: number;
   totalUnapprovedInvoiceValue: number;
   currentAccountBalance: number;
-}
-
-// Helper to format currency
-const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
 }
 
 function AvailabilityDisplay({
@@ -22,17 +18,33 @@ function AvailabilityDisplay({
   currentAccountBalance,
 }: AvailabilityDisplayProps) {
   return (
-    <div style={{ border: '1px solid #eee', padding: '15px', margin: '20px 0' }}>
-      <h4>Availability Calculation</h4>
-      <p>Current Sales Ledger: {formatCurrency(currentSalesLedgerBalance)}</p>
-      <p>Less: Total Unapproved Value: {formatCurrency(totalUnapprovedInvoiceValue)}</p>
-      <p>Approved Sales Ledger: {formatCurrency(currentSalesLedgerBalance - totalUnapprovedInvoiceValue)}</p>
-      <p>Multiply by Advance Rate (90%):</p>
-      <p><strong>Gross Availability: {formatCurrency(grossAvailability)}</strong></p>
-      <p>Less: Current Account Balance: {formatCurrency(currentAccountBalance)}</p>
-      <p><strong>Net Availability: {formatCurrency(netAvailability)}</strong></p>
-    </div>
+    <Card variation="outlined" padding="medium" marginBottom="medium">
+      <Heading level={5} marginBottom="small">Availability Overview</Heading>
+      <Grid templateColumns={{ base: "1fr", medium: "1fr 1fr"}} gap="small">
+        <Flex direction="column">
+          <Text fontWeight="bold">Sales Ledger Balance:</Text>
+          <Text>£{currentSalesLedgerBalance.toFixed(2)}</Text>
+        </Flex>
+        <Flex direction="column">
+          <Text fontWeight="bold">Less Unapproved Invoices:</Text>
+          <Text>£{totalUnapprovedInvoiceValue.toFixed(2)}</Text>
+        </Flex>
+        <Flex direction="column">
+          <Text fontWeight="bold">Gross Availability (90%):</Text>
+          <Text color="font.info">£{grossAvailability.toFixed(2)}</Text>
+        </Flex>
+        <Flex direction="column">
+          <Text fontWeight="bold">Less Current Account Balance:</Text>
+          <Text>£{currentAccountBalance.toFixed(2)}</Text>
+        </Flex>
+        <Flex direction="column" style={{ gridColumn: "span 2" }}>
+          <Text fontWeight="bold" fontSize="large">Net Availability:</Text>
+          <Text fontSize="large" color="font.success" fontWeight="bold">
+            £{netAvailability.toFixed(2)}
+          </Text>
+        </Flex>
+      </Grid>
+    </Card>
   );
 }
-
 export default AvailabilityDisplay;

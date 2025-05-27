@@ -1,21 +1,20 @@
-// src/CurrentBalance.jsx
+// src/CurrentBalance.tsx
 import React from 'react';
+import { Heading, Text, Card } from '@aws-amplify/ui-react';
 
 interface CurrentBalanceProps {
   balance: number;
+  title?: string;
 }
 
-function CurrentBalance({ balance }: CurrentBalanceProps) {
-  // Format balance for display (e.g., using browser's built-in Intl)
-  const formattedBalance = new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency: 'GBP' // Adjust currency as needed
-  }).format(balance);
-
+function CurrentBalance({ balance, title = "Current Sales Ledger Balance" }: CurrentBalanceProps) {
   return (
-    <div>
-      <h3>Current Balance: {formattedBalance}</h3>
-    </div>
+    <Card variation="outlined" padding="medium" marginBottom="medium">
+      <Heading level={5}>{title}</Heading>
+      <Text fontSize="xl" fontWeight="bold" color={balance >= 0 ? 'font.success' : 'font.error'}>
+        £{balance.toFixed(2)}
+      </Text>
+    </Card>
   );
 }
 export default CurrentBalance;

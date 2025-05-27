@@ -1,94 +1,90 @@
 // src/LedgerEntryForm.tsx
 import React, { useState } from 'react';
+import { Button, TextField, SelectField, Flex, Heading, Alert, View } from '@aws-amplify/ui-react';
+import { LedgerEntryType, type CreateLedgerEntryInput } from './graphql/API'; // Assuming types are here
 
-// Define Props interface for the component
 interface LedgerEntryFormProps {
-  // Function passed from the parent component (SalesLedger) to handle the form data on submission
-  onSubmit: (data: { type: string, amount: number, description?: string }) => void;
+  onSubmit: (data: Pick<CreateLedgerEntryInput, "type" | "amount" | "description">) => void;
+  disabled?: boolean;
 }
 
-// Functional component definition
-function LedgerEntryForm({ onSubmit }: LedgerEntryFormProps) {
-  // State variables to manage the form inputs
-  const [type, setType] = useState('INVOICE'); // Default type when form loads/resets
+function LedgerEntryForm({ onSubmit, disabled = false }: LedgerEntryFormProps) {
+  const [type, setType] = useState<LedgerEntryType>(LedgerEntryType.INVOICE);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Function to handle the form's submit event
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Prevent the default browser form submission (page reload)
-
-    // Validate the amount input
+    event.preventDefault();
+    setFormError(null);
     const numericAmount = parseFloat(amount);
+
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      alert("Please enter a valid positive amount."); // Simple browser alert for validation
-      return; // Stop submission if validation fails
+      setFormError('Please enter a valid positive amount.');
+      return;
+    }
+    if (!type) {
+      setFormError('Please select a transaction type.');
+      return;
     }
 
-    // Call the onSubmit function passed via props, sending the form data
     onSubmit({
-      type: type, // The selected type (e.g., "INVOICE")
-      amount: numericAmount, // The parsed numeric amount
-      description: description || undefined // Use the description, or undefined if empty
+      type: type as LedgerEntryType, // Cast as enum type
+      amount: numericAmount,
+      description: description || undefined,
     });
 
-    // Reset the form fields to their initial state after submission
     setAmount('');
     setDescription('');
-    setType('INVOICE');
+    setType(LedgerEntryType.INVOICE); // Reset to default
   };
 
-  // JSX structure for the form
   return (
-    <form onSubmit={handleSubmit} style={{ margin: '20px 0', border: '1px solid #ccc', padding: '15px' }}>
-      <h4>Add New Transaction</h4>
-      <div>
-        <label htmlFor="entry-type" style={{ marginRight: '10px' }}>Type:</label>
-        <select
-          id="entry-type"
-          value={type} // Controlled component: value linked to state
-          onChange={(e) => setType(e.target.value)} // Update state on change
-          required // HTML5 validation: field must be selected
+    <View as="form" onSubmit={handleSubmit} marginTop="medium" border="1px solid #ddd" padding="medium">
+      <Heading level={5} marginBottom="small">Add New Sales Ledger Transaction</Heading>
+      {formError && <Alert variation="error" marginBottom="small" isDismissible={true} onDismiss={()=>setFormError(null)}>{formError}</Alert>}
+      <Flex direction="column" gap="small">
+        <SelectField
+          label="Transaction Type"
+          value={type}
+          onChange={(e) => setType(e.target.value as LedgerEntryType)}
+          required
+          disabled={disabled}
         >
-          {/* --- Options available to the end-user --- */}
-          {/* --- CASH_RECEIPT is intentionally excluded --- */}
-          <option value="INVOICE">Invoice (+)</option>
-          <option value="CREDIT_NOTE">Credit Note (-)</option>
-          <option value="INCREASE_ADJUSTMENT">Increase Adjustment (+)</option>
-          <option value="DECREASE_ADJUSTMENT">Decrease Adjustment (-)</option>
-        </select>
-      </div>
-      <div style={{ marginTop: '10px' }}>
-        <label htmlFor="entry-amount" style={{ marginRight: '10px' }}>Amount:</label>
-        <input
-          id="entry-amount"
+          {/* Filter out CASH_RECEIPT as per your previous comment if needed */}
+          {Object.values(LedgerEntryType)
+            .filter(lt => lt !== LedgerEntryType.CASH_RECEIPT) // Example if CASH_RECEIPT is managed elsewhere
+            .map((entryType) => (
+            <option key={entryType} value={entryType}>
+              {entryType.replace('_', ' ')} 
+              {['INVOICE', 'INCREASE_ADJUSTMENT'].includes(entryType) ? ' (+)' : ' (-)'}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Amount (£)"
           type="number"
-          step="0.01" // Allow decimal input (e.g., for pounds and pence)
-          min="0.01"  // HTML5 validation: minimum positive value
-          value={amount} // Controlled component
-          onChange={(e) => setAmount(e.target.value)} // Update state on change
-          required // HTML5 validation: field is required
+          step="0.01"
+          min="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          disabled={disabled}
           placeholder="e.g., 100.50"
-          style={{ width: '150px' }}
         />
-      </div>
-       <div style={{ marginTop: '10px' }}>
-        <label htmlFor="entry-description" style={{ marginRight: '10px' }}>Description (Optional):</label>
-        <input
-          id="entry-description"
-          type="text"
-          value={description} // Controlled component
-          onChange={(e) => setDescription(e.target.value)} // Update state on change
+        <TextField
+          label="Description (Optional)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          disabled={disabled}
           placeholder="e.g., Invoice #123"
         />
-      </div>
-      <button type="submit" style={{ marginTop: '15px' }}>
-        Add Entry
-      </button>
-      {/* Note: No loading state handling here; the parent SalesLedger handles async logic */}
-    </form>
+        <Button type="submit" variation="primary" isLoading={disabled} disabled={disabled}>
+          Add Transaction
+        </Button>
+      </Flex>
+    </View>
   );
 }
 
-// Export the component as the default export for this file
 export default LedgerEntryForm;

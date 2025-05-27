@@ -1,0 +1,81 @@
+#import "./fragments.graphql"
+
+query GetLedgerEntry($id: ID!) {
+  getLedgerEntry(id: $id) {
+    ...LedgerEntryFields
+  }
+}
+
+query ListLedgerEntries(
+  $filter: LedgerEntryFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listLedgerEntries(filter: $filter, limit: $limit, nextToken: $nextToken) {
+    items {
+      ...LedgerEntryFields
+    }
+    nextToken
+    __typename
+  }
+}
+
+query GetAccountStatus($id: ID!) {
+  getAccountStatus(id: $id) {
+    ...AccountStatusFields
+  }
+}
+
+query ListAccountStatuses(
+  $owner: String # This 'owner' arg might be redundant if filter.owner is used
+  $filter: AccountStatusFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listAccountStatuses(
+    owner: $owner
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      ...AccountStatusFields
+    }
+    nextToken
+    __typename
+  }
+}
+
+query GetCurrentAccountTransaction($id: ID!) {
+  getCurrentAccountTransaction(id: $id) {
+    ...CurrentAccountTransactionFields
+  }
+}
+
+query ListCurrentAccountTransactions(
+  $filter: CurrentAccountTransactionFilterInput
+  $limit: Int
+  $nextToken: String
+) {
+  listCurrentAccountTransactions(
+    filter: $filter
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      ...CurrentAccountTransactionFields
+    }
+    nextToken
+    __typename
+  }
+}
+
+query AdminListUsers($limit: Int, $nextToken: String) {
+  adminListUsers(limit: $limit, nextToken: $nextToken) {
+    users {
+      ...CognitoUserFields
+    }
+    nextToken
+    __typename
+  }
+}

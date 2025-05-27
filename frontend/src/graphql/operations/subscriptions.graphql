@@ -1,0 +1,7 @@
+#import "./fragments.graphql"
+
+subscription OnCreateLedgerEntry($owner: String) {
+  onCreateLedgerEntry(owner: $owner) {
+    ...LedgerEntryFields
+  }
+}
