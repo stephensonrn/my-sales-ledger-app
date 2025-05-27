@@ -1,18 +1,6 @@
-// frontend/src/amplifyconfiguration.json
 {
-  "Auth": {
-    "Cognito": {
-      "userPoolId": "eu-west-1_jIa2hOCaZ",
-      "userPoolClientId": "3br2lv10rbfjt4v12j3lonemfm"
-      // "identityPoolId": "eu-west-1_jIa2hOCaZ" // if you have one
-    }
-  },
-  "API": {
-    "GraphQL": {
-      "endpoint": "https://yik7x25zqne6jnnzvymp5c3c7m.appsync-api.eu-west-1.amazonaws.com/graphql",
-      "region": "eu-west-1",
-      "defaultAuthMode": "AMAZON_COGNITO_USER_POOLS",
-      "modelIntrospection": true // Important for DataStore/client.models
-    }
-  }
+  "aws_project_region": "eu-north-1",
+  "aws_appsync_graphqlEndpoint": "https://yik7x25zqne6jnnzvymp5c3c7m.appsync-api.eu-west-1.amazonaws.com/graphql",
+  "aws_appsync_region": "eu-north-1",
+  "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS"
 }

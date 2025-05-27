@@ -1,196 +1,211 @@
 // src/ManageAccountStatus.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { ListAccountStatusesDocument, UpdateAccountStatusDocument } from './graphql/generated/graphql';
-import type { AccountStatus, UpdateAccountStatusInput, ListAccountStatusesQuery, UpdateAccountStatusMutation } from './graphql/generated/graphql';
-import { Button, TextField, Loader, Text, Card, Heading, Alert } from '@aws-amplify/ui-react';
-import CreateAccountStatusForm from './CreateAccountStatusForm';
+import {
+    ListAccountStatusesDocument,
+    UpdateAccountStatusDocument,
+    // Import types (ensure AccountStatus is detailed enough if not using the full type from API.ts)
+    type AccountStatus, // Assuming this type is defined in your API.ts
+    type ListAccountStatusesQuery,
+    type UpdateAccountStatusInput,
+    type UpdateAccountStatusMutation
+} from './graphql/API'; // Assuming API.ts is in src/graphql/
+
+import { Button, TextField, Loader, Text, Card, Heading, Alert, Flex } from '@aws-amplify/ui-react';
+import CreateAccountStatusForm from './CreateAccountStatusForm'; // Import the new form
 
 const client = generateClient();
 
 interface ManageAccountStatusProps {
   selectedOwnerSub: string | null;
-  targetUserName?: string;
+  targetUserName?: string | null; // For display purposes
 }
 
 function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccountStatusProps) {
-  const [loadedStatus, setLoadedStatus] = useState<AccountStatus | null>(null);
-  const [newUnapprovedValue, setNewUnapprovedValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState<AccountStatus | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
+  
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const [totalUnapprovedInvoiceValue, setTotalUnapprovedInvoiceValue] = useState<string>('');
 
-  useEffect(() => {
-    console.log("ManageAccountStatus EFFECT: selectedOwnerSub changed to:", selectedOwnerSub);
-    if (selectedOwnerSub) {
-      console.log("ManageAccountStatus EFFECT: Clearing previous state, preparing to load new status for", selectedOwnerSub);
-      setLoadedStatus(null);
-      setNewUnapprovedValue('');
-      setError(null);
-      setSuccess(null);
-      setShowCreateForm(false);
-      setIsLoading(true);
-      loadStatusForSelectedUser(selectedOwnerSub);
-    } else {
-      setLoadedStatus(null);
-      setNewUnapprovedValue('');
-      setError(null);
-      setSuccess(null);
-      setShowCreateForm(false);
-      setIsLoading(false);
-      console.log("ManageAccountStatus EFFECT: No user selected, state cleared.");
+  const fetchAccountStatus = useCallback(async (ownerId: string) => {
+    if (!ownerId) {
+        setStatus(null);
+        setShowCreateForm(false);
+        setTotalUnapprovedInvoiceValue('');
+        return;
     }
-  }, [selectedOwnerSub]);
-
-  const loadStatusForSelectedUser = async (ownerSub: string) => {
-    console.log(`ManageAccountStatus LOAD_FN: Attempting to load status for owner: ${ownerSub}`);
+    setIsLoading(true);
+    setError(null);
+    setUpdateSuccess(null);
+    setUpdateError(null);
+    setShowCreateForm(false);
+    console.log(`ManageAccountStatus: Attempting to load status for owner: ${ownerId}`);
     try {
       const response = await client.graphql<ListAccountStatusesQuery>({
         query: ListAccountStatusesDocument,
-        variables: { filter: { owner: { eq: ownerSub } }, limit: 1 },
-        authMode: 'userPool'
+        variables: {
+          filter: { owner: { eq: ownerId } }, // Assuming 'id' in AccountStatus is the owner's sub
+                                                // Or if your schema expects 'owner: ownerId' direct variable
+          limit: 1,
+        },
+        authMode: 'userPool', // Assuming admin makes this call
       });
-      console.log(`ManageAccountStatus LOAD_FN: Raw Response for ${ownerSub}:`, JSON.stringify(response, null, 2));
+      console.log("ManageAccountStatus: Raw Response for listAccountStatuses:", response);
 
-      // Explicitly check for GraphQL errors in the response
-      if (response.errors && response.errors.length > 0) {
-        console.error("ManageAccountStatus LOAD_FN: GraphQL errors returned:", response.errors);
-        setError(`Failed to load status: ${response.errors[0].message}`);
-        setLoadedStatus(null);
-        setShowCreateForm(false); // Do not show create form on GraphQL error
-        setIsLoading(false); // Stop loading indicator
-        return; // Important to exit here
+      if (response.errors) throw response.errors;
+
+      const items = response.data?.listAccountStatuses?.items;
+      if (items && items.length > 0 && items[0]) {
+        const fetchedStatus = items[0] as AccountStatus;
+        setStatus(fetchedStatus);
+        setTotalUnapprovedInvoiceValue(fetchedStatus.totalUnapprovedInvoiceValue.toString());
+        setShowCreateForm(false);
+        console.log("ManageAccountStatus: Status found for", ownerId, fetchedStatus);
+      } else {
+        setStatus(null);
+        setTotalUnapprovedInvoiceValue('');
+        setShowCreateForm(true); // Show create form if no status exists
+        console.log("ManageAccountStatus: No AccountStatus record found for", ownerId);
       }
-
-      const statusItems = response.data?.listAccountStatuses?.items;
-
-      if (statusItems && statusItems.length > 0) {
-        const validStatus = statusItems.filter(item => item !== null)[0] as AccountStatus | undefined;
-        if (validStatus) {
-          console.log(`ManageAccountStatus LOAD_FN: Status found for ${ownerSub}.`);
-          setLoadedStatus(validStatus);
-          setNewUnapprovedValue(validStatus.totalUnapprovedInvoiceValue.toString());
-          setShowCreateForm(false);
-          setError(null);
-        } else {
-          // This case (items array exists but contains only nulls after filtering) is unlikely
-          console.log(`ManageAccountStatus LOAD_FN: Status items array present but no valid status for ${ownerSub}. Showing create form.`);
-          setLoadedStatus(null);
-          setShowCreateForm(true);
-          setError(null);
-        }
-      } else { // No items found in the response (statusItems is null, undefined, or empty array)
-        console.log(`ManageAccountStatus LOAD_FN: No AccountStatus record found for ${ownerSub}. Showing create form.`);
-        setLoadedStatus(null);
-        setShowCreateForm(true);
-        setError(null);
-      }
-    } catch (err: any) { // Catches network errors or errors explicitly thrown (like from response.errors check)
-      console.error("ManageAccountStatus LOAD_FN: CATCH block error loading status:", err);
-      const errorMsg = err?.message || 'Unknown error during status load.';
-      setError(`Failed to load status: ${errorMsg}`);
-      setLoadedStatus(null);
-      setShowCreateForm(false); // Don't show create form if there was a network/unexpected error
+    } catch (err: any) {
+      console.error("ManageAccountStatus: Error loading account status:", err);
+      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error';
+      setError(`Failed to load account status: ${errorMessages}`);
+      setStatus(null);
+      setTotalUnapprovedInvoiceValue('');
     } finally {
       setIsLoading(false);
-      console.log(`ManageAccountStatus LOAD_FN: Finished loading attempt for ${ownerSub}. isLoading: false`);
     }
-  };
+  }, []);
 
-  const handleUpdateStatus = async (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (selectedOwnerSub) {
+      console.log("ManageAccountStatus: selectedOwnerSub changed to:", selectedOwnerSub);
+      fetchAccountStatus(selectedOwnerSub);
+    } else {
+      // Clear status if no user is selected
+      setStatus(null);
+      setTotalUnapprovedInvoiceValue('');
+      setShowCreateForm(false);
+      setError(null);
+    }
+  }, [selectedOwnerSub, fetchAccountStatus]);
+
+  const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log("ManageAccountStatus UPDATE_FN: Triggered. selectedOwnerSub:", selectedOwnerSub, "loadedStatus:", loadedStatus);
-    if (!loadedStatus?.id || loadedStatus.owner !== selectedOwnerSub) {
-      setError('Status for the selected user not loaded or ID mismatch. Please re-select user.');
+    if (!status || !status.id) {
+      setUpdateError("No account status loaded to update.");
       return;
     }
-    const numericValue = parseFloat(newUnapprovedValue);
+    setUpdateError(null);
+    setUpdateSuccess(null);
+    setIsUpdating(true);
+
+    const numericValue = parseFloat(totalUnapprovedInvoiceValue);
     if (isNaN(numericValue) || numericValue < 0) {
-      setError('Please enter a valid non-negative unapproved value.'); return;
+      setUpdateError("Please enter a valid non-negative amount.");
+      setIsUpdating(false);
+      return;
     }
 
-    setIsLoading(true); setError(null); setSuccess(null);
-    const input: UpdateAccountStatusInput = { id: loadedStatus.id, totalUnapprovedInvoiceValue: numericValue };
+    const input: UpdateAccountStatusInput = {
+      id: status.id, // This should be the ID of the AccountStatus record (likely user's sub)
+      totalUnapprovedInvoiceValue: numericValue,
+    };
+
     try {
-        const response = await client.graphql<UpdateAccountStatusMutation>({
-            query: UpdateAccountStatusDocument, variables: { input }, authMode: 'userPool'
-        });
-        const updatedStatus = response.data?.updateAccountStatus;
-        if (response.errors) throw response.errors[0];
-        if (updatedStatus) {
-            setLoadedStatus(updatedStatus as AccountStatus);
-            setNewUnapprovedValue(updatedStatus.totalUnapprovedInvoiceValue.toString());
-            setSuccess(`Successfully updated value for ${updatedStatus.owner} to ${numericValue.toFixed(2)}.`);
-        } else { setError("Update successful, but server did not return updated data."); }
+      console.log("ManageAccountStatus: Attempting to update status with input:", input);
+      const response = await client.graphql<UpdateAccountStatusMutation>({
+        query: UpdateAccountStatusDocument,
+        variables: { input },
+        authMode: 'userPool', // Assuming admin makes this call
+      });
+      console.log("ManageAccountStatus: Update response:", response);
+
+      if (response.errors) throw response.errors;
+
+      const updatedStatus = response.data?.updateAccountStatus;
+      if (updatedStatus) {
+        setStatus(updatedStatus as AccountStatus);
+        setTotalUnapprovedInvoiceValue(updatedStatus.totalUnapprovedInvoiceValue.toString());
+        setUpdateSuccess("Account status updated successfully!");
+      } else {
+         throw new Error("Update response did not return an account status.");
+      }
     } catch (err: any) {
-      const errors = err.errors || [err];
-      setError(`Failed to update status: ${errors[0]?.message || 'Unknown error'}`);
-    } finally { setIsLoading(false); }
+      console.error("ManageAccountStatus: Error updating account status:", err);
+      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error';
+      setUpdateError(`Failed to update status: ${errorMessages}`);
+    } finally {
+      setIsUpdating(false);
+    }
   };
-
+  
   const handleStatusCreated = (newStatus: AccountStatus) => {
-    console.log("ManageAccountStatus CREATED_CB: New status received from form:", newStatus);
-    setLoadedStatus(newStatus);
-    setNewUnapprovedValue(newStatus.totalUnapprovedInvoiceValue.toString());
-    setShowCreateForm(false);
-    setSuccess("Account Status created successfully! You can now manage it.");
-    setError(null); // Clear any "not found" type errors
+    console.log("ManageAccountStatus: New status created by form, updating state:", newStatus);
+    setStatus(newStatus);
+    setTotalUnapprovedInvoiceValue(newStatus.totalUnapprovedInvoiceValue.toString());
+    setShowCreateForm(false); // Hide create form
+    setError(null); // Clear any previous "not found" error
+    setUpdateSuccess("Account status created successfully!"); // Provide success feedback
   };
 
-  console.log("ManageAccountStatus RENDER: selectedOwnerSub=", selectedOwnerSub, "isLoading=", isLoading, "loadedStatus=", !!loadedStatus, "showCreateForm=", showCreateForm, "error=", error);
 
   if (!selectedOwnerSub) {
-     return null;
+    return null; // Or some placeholder if no user is selected in the parent AdminPage
   }
 
-  // Show main loader if we are in an isLoading state AND not intending to show the create form (unless create form also has its own loader)
-  if (isLoading && !showCreateForm) {
-     return <Loader size="large" marginTop="medium" />;
+  if (isLoading) {
+    return <Loader size="small" />;
   }
+
+  if (error) {
+    return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
+  }
+
+  if (showCreateForm && selectedOwnerSub) {
+    return (
+      <CreateAccountStatusForm 
+        ownerId={selectedOwnerSub} 
+        ownerDisplayName={targetUserName}
+        onStatusCreated={handleStatusCreated} 
+      />
+    );
+  }
+  
+  if (!status) {
+      // This case should ideally be covered by showCreateForm or error states.
+      // If selectedOwnerSub is present but status is null and not loading & no error, it implies no status.
+      // Handled by showCreateForm now. If create form is not shown, this might indicate an unexpected state.
+      return <Text>No account status information available for this user and create form is not shown.</Text>;
+  }
+
 
   return (
-    <Card variation="outlined" padding="medium">
-      <Heading level={5}>Manage Account Status</Heading>
-      <Text variation="tertiary" fontSize="small" marginBottom="medium">
-        For User Sub: <code>{selectedOwnerSub}</code>
-        {targetUserName && ` (${targetUserName})`}
-      </Text>
-
-      {/* Display general success/error messages from update/create actions */}
-      {success && <Alert variation="success" isDismissible={true} onDismiss={() => setSuccess(null)}>{success}</Alert>}
-      {error && <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>}
-
-
-      {loadedStatus && !showCreateForm && ( // If status is loaded AND we are NOT showing the create form
-          <form onSubmit={handleUpdateStatus} style={{marginTop: '1em'}}>
-            <TextField
-              label="Total Unapproved Value:" type="number" id="unapprovedValue"
-              step="0.01" min="0" value={newUnapprovedValue}
-              onChange={(e) => setNewUnapprovedValue(e.target.value)} required
-              isDisabled={isLoading}
-            />
-            <Button type="submit" isLoading={isLoading} variation="primary" marginTop="small">
-                Save New Value
-            </Button>
-          </form>
-      )}
-
-      {/* Show CreateAccountStatusForm if showCreateForm is true, user selected, and not in a general loading state */}
-      {showCreateForm && selectedOwnerSub && !isLoading && (
-        <CreateAccountStatusForm
-          targetUserSub={selectedOwnerSub}
-          targetUserName={targetUserName}
-          onStatusCreated={handleStatusCreated}
+    <View as="form" onSubmit={handleUpdate}>
+      <Flex direction="column" gap="small">
+        <TextField
+          label={`Total Unapproved Invoice Value for ${targetUserName || status.owner} (£)`}
+          type="number"
+          step="0.01"
+          min="0"
+          value={totalUnapprovedInvoiceValue}
+          onChange={(e) => setTotalUnapprovedInvoiceValue(e.target.value)}
+          required
+          disabled={isUpdating}
         />
-      )}
-
-      {/* Fallback text if nothing else is shown (e.g., an error occurred during load that prevented showing create form) */}
-      {/* Or simply if no status and create form is also not meant to be shown due to an error */}
-      {!loadedStatus && !showCreateForm && !isLoading && !error && (
-        <Text marginTop="small" variation="tertiary">No Account Status record found. Select user to load or create.</Text>
-      )}
-    </Card>
+        <Button type="submit" variation="primary" isLoading={isUpdating} disabled={isUpdating}>
+          Update Status
+        </Button>
+        {updateError && <Alert variation="error" marginTop="small" isDismissible={true} onDismiss={() => setUpdateError(null)}>{updateError}</Alert>}
+        {updateSuccess && <Alert variation="success" marginTop="small" isDismissible={true} onDismiss={() => setUpdateSuccess(null)}>{updateSuccess}</Alert>}
+      </Flex>
+    </View>
   );
 }
 

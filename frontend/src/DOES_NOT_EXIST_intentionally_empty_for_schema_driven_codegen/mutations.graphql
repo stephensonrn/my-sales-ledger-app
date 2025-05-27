@@ -1,0 +1,110 @@
+# this is an auto generated file. This will be overwritten
+
+mutation CreateLedgerEntry($input: CreateLedgerEntryInput!) {
+  createLedgerEntry(input: $input) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation UpdateLedgerEntry($input: UpdateLedgerEntryInput!) {
+  updateLedgerEntry(input: $input) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation DeleteLedgerEntry($id: ID!) {
+  deleteLedgerEntry(id: $id) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation AdminCreateLedgerEntry($input: AdminCreateLedgerEntryInput!) {
+  adminCreateLedgerEntry(input: $input) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation UpdateAccountStatus($input: UpdateAccountStatusInput!) {
+  updateAccountStatus(input: $input) {
+    id
+    owner
+    totalUnapprovedInvoiceValue
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation AdminCreateAccountStatus(
+  $ownerId: String!
+  $initialUnapprovedInvoiceValue: Float
+) {
+  adminCreateAccountStatus(
+    ownerId: $ownerId
+    initialUnapprovedInvoiceValue: $initialUnapprovedInvoiceValue
+  ) {
+    id
+    owner
+    totalUnapprovedInvoiceValue
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation AdminAddCashReceipt(
+  $targetOwnerId: String!
+  $amount: Float!
+  $description: String
+) {
+  adminAddCashReceipt(
+    targetOwnerId: $targetOwnerId
+    amount: $amount
+    description: $description
+  ) {
+    id
+    owner
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    __typename
+  }
+}
+
+mutation SendPaymentRequestEmail($amount: Float!) {
+  sendPaymentRequestEmail(amount: $amount)
+}
+
+mutation AdminRequestPaymentForUser($input: AdminRequestPaymentForUserInput!) {
+  adminRequestPaymentForUser(input: $input)
+}

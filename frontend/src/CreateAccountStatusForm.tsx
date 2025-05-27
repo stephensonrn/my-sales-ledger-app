@@ -1,68 +1,98 @@
 // src/CreateAccountStatusForm.tsx
 import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
-// --- UPDATED IMPORTS ---
-import { AdminCreateAccountStatusDocument } from './graphql/generated/graphql';
-import type { AccountStatus, AdminCreateAccountStatusMutationVariables, AdminCreateAccountStatusMutation } from './graphql/generated/graphql';
-// --- END UPDATED IMPORTS ---
-import { Button, TextField, Text, Card, Heading, Alert } from '@aws-amplify/ui-react';
+import { Button, TextField, Flex, Heading, Alert } from '@aws-amplify/ui-react';
+import {
+    AdminCreateAccountStatusDocument, // Make sure this is in your schema and generated
+    type AdminCreateAccountStatusInput,
+    type AdminCreateAccountStatusMutation,
+    type AccountStatus // To potentially return the created status
+} from './graphql/API'; // Assuming API.ts is in src/graphql/
 
 const client = generateClient();
 
 interface CreateAccountStatusFormProps {
-  targetUserSub: string;
-  targetUserName?: string;
-  onStatusCreated: (newStatus: AccountStatus) => void;
+  ownerId: string; // The 'sub' of the user for whom to create the status
+  ownerDisplayName?: string; // For display purposes
+  onStatusCreated: (newStatus: AccountStatus) => void; // Callback after successful creation
 }
 
-function CreateAccountStatusForm({ targetUserSub, targetUserName, onStatusCreated }: CreateAccountStatusFormProps) {
+function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }: CreateAccountStatusFormProps) {
   const [initialValue, setInitialValue] = useState('0');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleCreateStatus = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const numericValue = parseFloat(initialValue);
-    if (isNaN(numericValue) || numericValue < 0) {
-      setError('Please enter a valid non-negative initial unapproved value.'); return;
-    }
-    setIsLoading(true); setError(null);
+    setError(null);
+    setIsLoading(true);
 
-    const variables: AdminCreateAccountStatusMutationVariables = {
-      ownerId: targetUserSub,
-      initialUnapprovedInvoiceValue: numericValue,
+    const numericInitialValue = parseFloat(initialValue);
+    if (isNaN(numericInitialValue) || numericInitialValue < 0) {
+      setError("Please enter a valid non-negative initial value for unapproved invoices.");
+      setIsLoading(false);
+      return;
+    }
+
+    const input: AdminCreateAccountStatusInput = {
+      ownerId: ownerId, // The schema used ownerId for this mutation
+      initialUnapprovedInvoiceValue: numericInitialValue,
     };
 
     try {
+      console.log("CreateAccountStatusForm: Attempting to create status with input:", input);
       const response = await client.graphql<AdminCreateAccountStatusMutation>({
         query: AdminCreateAccountStatusDocument,
-        variables: variables,
-        authMode: 'userPool',
+        variables: { input: input }, // Your schema might take direct args instead of input obj
+                                     // Adjust if your adminCreateAccountStatus takes (ownerId, initialValue)
+        authMode: 'userPool' // Assuming admin is making this call
       });
-      const createdStatus = response.data?.adminCreateAccountStatus;
-      if (response.errors) throw response.errors[0];
+      console.log("CreateAccountStatusForm: Response from mutation:", response);
 
-      if (createdStatus) {
-        onStatusCreated(createdStatus as AccountStatus); // Pass complete AccountStatus object
-        setInitialValue('0');
-      } else { setError("Submission successful, but server did not return confirmation data."); }
+      if (response.errors) {
+        throw response.errors;
+      }
+
+      const newStatus = response.data?.adminCreateAccountStatus;
+      if (newStatus) {
+        console.log("CreateAccountStatusForm: Status created successfully:", newStatus);
+        onStatusCreated(newStatus as AccountStatus); // Pass the full status object
+        setInitialValue('0'); // Reset form
+      } else {
+        throw new Error("Failed to create account status, no data returned.");
+      }
     } catch (err: any) {
-      const errors = err.errors || [err];
-      setError(`Failed to create account status: ${errors[0]?.message || 'Unknown error'}`);
-    } finally { setIsLoading(false); }
+      console.error("CreateAccountStatusForm: Error creating account status:", err);
+      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error';
+      setError(`Failed to create account status: ${errorMessages}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <Card variation="elevated" padding="medium" marginTop="medium">
+    <View as="form" onSubmit={handleSubmit} border="1px dashed #ccc" padding="medium" marginTop="small">
       <Heading level={6} marginBottom="small">
-        No Account Status Exists for {targetUserName ? `${targetUserName} (${targetUserSub})` : targetUserSub}. Create One?
+        No Account Status Found for {ownerDisplayName || ownerId}. Create one?
       </Heading>
-      <form onSubmit={handleCreateStatus}>
-        <TextField label="Initial Total Unapproved Value:" type="number" step="0.01" min="0" value={initialValue} onChange={(e) => setInitialValue(e.target.value)} required isDisabled={isLoading} />
-        <Button type="submit" isLoading={isLoading} variation="constructive" marginTop="small">Create Account Status</Button>
-      </form>
-      {error && <Alert variation="error" marginTop="small" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>}
-    </Card>
+      {error && <Alert variation="error" marginBottom="small" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>}
+      <Flex direction="column" gap="small">
+        <TextField
+          label="Initial Total Unapproved Invoice Value (£)"
+          type="number"
+          step="0.01"
+          min="0"
+          value={initialValue}
+          onChange={(e) => setInitialValue(e.target.value)}
+          required
+          disabled={isLoading}
+        />
+        <Button type="submit" variation="primary" isLoading={isLoading} disabled={isLoading}>
+          Create Account Status
+        </Button>
+      </Flex>
+    </View>
   );
 }
+
 export default CreateAccountStatusForm;

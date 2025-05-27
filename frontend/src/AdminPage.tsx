@@ -10,17 +10,21 @@ import {
   Card,
   Badge,
   View,
-  Alert, // Make sure Alert is imported
+  Alert,
 } from '@aws-amplify/ui-react';
 
-// Corrected imports for GraphQL documents and types
-import { AdminListUsersDocument } from './graphql/queries'; // Assuming it's in queries.ts
-import type { CognitoUser, AdminListUsersQuery } from './API';   // Types from API.ts
+// Corrected imports: All from the single generated file in src/graphql/API.ts
+import { 
+    AdminListUsersDocument,
+    // Types:
+    type CognitoUser, 
+    type AdminListUsersQuery 
+} from './graphql/API'; // Path relative to AdminPage.tsx in src/
 
 // Import child components
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
-import SalesLedger from './SalesLedger'; // Import the SalesLedger component
+import SalesLedger from './SalesLedger';
 
 const client = generateClient();
 const USERS_PER_PAGE = 10;
@@ -36,14 +40,15 @@ function AdminPage() {
     if (isLoadingUsers && !token) return;
     setIsLoadingUsers(true);
     setFetchError(null);
-    if (!token) {
-      setSelectedUser(null);
-      setUsers([]);
+    if (!token) { 
+        setSelectedUser(null); 
+        setUsers([]);
     }
 
     console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
-      const response = await client.graphql<AdminListUsersQuery>({
+      // Ensure AdminListUsersQuery is the correct type for the response data structure
+      const response = await client.graphql<AdminListUsersQuery>({ 
         query: AdminListUsersDocument,
         variables: {
           limit: USERS_PER_PAGE,
@@ -152,7 +157,7 @@ function AdminPage() {
         {selectedUser && selectedUser.sub ? (
           <>
             <Heading level={3} marginBottom="medium">
-              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username}
+              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username} 
               <Text as="span" fontSize="small" color="font.tertiary"> (ID: {selectedUser.sub})</Text>
             </Heading>
             
@@ -161,7 +166,7 @@ function AdminPage() {
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
                 <ManageAccountStatus 
                     selectedOwnerSub={selectedUser.sub} 
-                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username} 
+                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub} 
                 />
               </Card>
               

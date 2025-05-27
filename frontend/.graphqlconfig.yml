@@ -1,22 +1,27 @@
 # frontend/.graphqlconfig.yml
 projects:
-  "Codegen Project":
-    schemaPath: "schema.graphql" 
+  "Codegen Project": # You can rename "Codegen Project" if needed, e.g., to your API name
+    schemaPath: "schema.graphql" # Ensure frontend/schema.graphql exists and is up-to-date
     includes:
-      # If you have no .graphql files where you manually define operations, 
-      # you can try an empty array or a pattern that won't find anything unintended.
-      # This tells codegen to primarily use the schema to generate everything.
-      - "src/DOES_NOT_EXIST_intentionally_empty_for_schema_driven_codegen/**/*.graphql"
+      # This pattern tells codegen to look for operations within your TS/TSX files if you use gql tags.
+      # If you don't use gql tags for operations, and rely on schema-only generation,
+      # this can also be an empty array: []
+      # For comprehensive generation from schema, this is a good default:
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
     excludes:
       - ./amplify/**
-      - src/aws-exports.js 
-      - src/models/** extensions:
+      - "src/models/**" # If you use DataStore
+      - "src/aws-exports.js" # If it exists
+      - "src/graphql/API.ts" # Exclude the output file from being an input
+    extensions:
       amplify:
         codeGenTarget: typescript
-        generatedFileName: src/graphql/API.ts # All types and operations here
-        # docsFilePath can be removed if everything goes into generatedFileName
-        region: eu-west-1
-        # apiId: mglrg2nkw5dereoh7q3cyuv65m # Can be commented out if schemaPath is definitive
+        generatedFileName: src/graphql/API.ts # All generated code here
+        # docsFilePath should be commented out or removed to consolidate into generatedFileName
+        # docsFilePath: src/graphql 
+        region: eu-west-1 # Your AWS region for the AppSync API
+        apiId: mglrg2nkw5dereoh7q3cyuv65m # Your AppSync API ID
         frontend: typescript
         framework: react
         maxDepth: 3 
