@@ -17,6 +17,7 @@ export const createLedgerEntry = /* GraphQL */ `mutation CreateLedgerEntry($inpu
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -33,6 +34,7 @@ export const updateLedgerEntry = /* GraphQL */ `mutation UpdateLedgerEntry($inpu
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -49,6 +51,7 @@ export const deleteLedgerEntry = /* GraphQL */ `mutation DeleteLedgerEntry($id: 
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -65,6 +68,7 @@ export const adminCreateLedgerEntry = /* GraphQL */ `mutation AdminCreateLedgerE
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -79,6 +83,7 @@ export const updateAccountStatus = /* GraphQL */ `mutation UpdateAccountStatus($
     totalUnapprovedInvoiceValue
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -86,19 +91,14 @@ export const updateAccountStatus = /* GraphQL */ `mutation UpdateAccountStatus($
   APITypes.UpdateAccountStatusMutationVariables,
   APITypes.UpdateAccountStatusMutation
 >;
-export const adminCreateAccountStatus = /* GraphQL */ `mutation AdminCreateAccountStatus(
-  $ownerId: String!
-  $initialUnapprovedInvoiceValue: Float
-) {
-  adminCreateAccountStatus(
-    ownerId: $ownerId
-    initialUnapprovedInvoiceValue: $initialUnapprovedInvoiceValue
-  ) {
+export const adminCreateAccountStatus = /* GraphQL */ `mutation AdminCreateAccountStatus($input: AdminCreateAccountStatusInput!) {
+  adminCreateAccountStatus(input: $input) {
     id
     owner
     totalUnapprovedInvoiceValue
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -106,16 +106,8 @@ export const adminCreateAccountStatus = /* GraphQL */ `mutation AdminCreateAccou
   APITypes.AdminCreateAccountStatusMutationVariables,
   APITypes.AdminCreateAccountStatusMutation
 >;
-export const adminAddCashReceipt = /* GraphQL */ `mutation AdminAddCashReceipt(
-  $targetOwnerId: String!
-  $amount: Float!
-  $description: String
-) {
-  adminAddCashReceipt(
-    targetOwnerId: $targetOwnerId
-    amount: $amount
-    description: $description
-  ) {
+export const adminAddCashReceipt = /* GraphQL */ `mutation AdminAddCashReceipt($input: AdminAddCashReceiptInput!) {
+  adminAddCashReceipt(input: $input) {
     id
     owner
     type
@@ -123,6 +115,7 @@ export const adminAddCashReceipt = /* GraphQL */ `mutation AdminAddCashReceipt(
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -130,15 +123,20 @@ export const adminAddCashReceipt = /* GraphQL */ `mutation AdminAddCashReceipt(
   APITypes.AdminAddCashReceiptMutationVariables,
   APITypes.AdminAddCashReceiptMutation
 >;
-export const sendPaymentRequestEmail = /* GraphQL */ `mutation SendPaymentRequestEmail($amount: Float!) {
-  sendPaymentRequestEmail(amount: $amount)
+export const sendPaymentRequestEmail = /* GraphQL */ `mutation SendPaymentRequestEmail($input: SendPaymentRequestInput!) {
+  sendPaymentRequestEmail(input: $input)
 }
 ` as GeneratedMutation<
   APITypes.SendPaymentRequestEmailMutationVariables,
   APITypes.SendPaymentRequestEmailMutation
 >;
 export const adminRequestPaymentForUser = /* GraphQL */ `mutation AdminRequestPaymentForUser($input: AdminRequestPaymentForUserInput!) {
-  adminRequestPaymentForUser(input: $input)
+  adminRequestPaymentForUser(input: $input) {
+    success
+    message
+    transactionId
+    __typename
+  }
 }
 ` as GeneratedMutation<
   APITypes.AdminRequestPaymentForUserMutationVariables,

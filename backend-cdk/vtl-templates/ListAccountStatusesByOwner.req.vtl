@@ -1,40 +1,52 @@
-## VTL Request Template for Query.listAccountStatuses
-## Fetches account statuses.
-## - Non-admins see their own status.
-## - Admins can see status for the owner specified in args.filter.owner.eq.
-## - If admin provides no owner filter, they see their own status.
+## REQ_VTL_STATUS_FIX_V8_MAY29_2255 ## NEW UNIQUE MARKER
 
-#set( $limit = $util.defaultIfNull($context.args.limit, 1) ) ## Often only one status per user
+#set( $limit = $util.defaultIfNull($context.args.limit, 1) )
 #set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
-#set( $ownerIdToQuery = $context.identity.sub ) ## Default to logged-in user's sub
+#set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
+#if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
+    $util.qr($ctx.log.info("STATUS_REQ_VTL_A8: Falling back to context.identity.sub for ownerIdToQuery"))
+    #set( $ownerIdToQuery = $context.identity.sub )
+#end
 
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
+    #set( $logMsg = "STATUS_REQ_VTL_A8: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
+    $util.qr($ctx.log.info($logMsg))
     #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #else
+    #set( $logMsg = "STATUS_REQ_VTL_A8: Admin call, no owner filter. Defaulting to admin's own ID from claims: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($logMsg))
   #end
+#else
+    #set( $logMsg = "STATUS_REQ_VTL_A8: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($logMsg))
 #end
 
-## Ensure ownerIdToQuery is not null or empty
+## Log the resolved ownerIdToQuery safely
+#set( $logOwnerId = "null" )
+#if( !$util.isNullOrBlank($ownerIdToQuery) )
+  #set( $logOwnerId = $ownerIdToQuery )
+#end
+$util.qr($ctx.log.info("STATUS_REQ_VTL_A8: Resolved ownerIdToQuery before validation = ${logOwnerId}")) ## Using VTL interpolation for safety
+
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
-  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated.", "InvalidRequestException")
+  $util.error("Owner ID for query is null or empty.", "InvalidRequestException")
 #end
 
 {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Assumes your GSI is named 'byOwner'
+  "index": "byOwner",
   "query": {
     "expression": "#ownerAttribute = :ownerValue",
     "expressionNames": {
-      "#ownerAttribute": "owner" ## Actual attribute name for owner in DynamoDB
+      "#ownerAttribute": "owner"
     },
     "expressionValues": {
-      ":ownerValue": $util.dynamodb.toDynamoDBJson($ownerIdToQuery)
+      ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery)
     }
   },
-  "limit": $limit,
-  #if( $nextToken )
-    "nextToken": $nextToken
-  #end
+  "limit": $limit
+  #if( $nextToken ), "nextToken": "$nextToken" #end
 }

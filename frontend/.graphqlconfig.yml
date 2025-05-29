@@ -1,21 +1,21 @@
 # frontend/.graphqlconfig.yml
 projects:
-  "Codegen Project": # Or your actual project name key from previous configs
-    schemaPath: "schema.graphql" # Ensure frontend/schema.graphql exists and is up-to-date
+  codegen: # Or "Codegen Project" - your project name key
+    schemaPath: "schema.graphql" # Ensure frontend/schema.graphql is your up-to-date schema
     includes:
-      - "src/graphql/operations/**/*.graphql" # Point to your new .graphql operation files
+      # Be very specific: point only to the directory where you MANUALLY created your .graphql operation files
+      - "src/graphql/operations/**/*.graphql" 
     excludes:
       - ./amplify/**
-      - "src/models/**" # If you use DataStore
-      - "src/aws-exports.js" # If it exists
-      - "src/graphql/API.ts" # Exclude the output file itself
+      - "src/models/**"         # If you use DataStore
+      - "src/aws-exports.js"    # If it exists
+      - "src/graphql/API.ts"    # Exclude the output file itself
     extensions:
       amplify:
         codeGenTarget: typescript
         generatedFileName: "src/graphql/API.ts" # All generated TS types AND operation documents here
-        # docsFilePath can be removed if everything goes into generatedFileName
-        region: "eu-west-1" 
-        apiId: "mglrg2nkw5dereoh7q3cyuv65m" # Good to keep for reference/introspection fallback
+        region: "eu-west-1"
+        apiId: "mglrg2nkw5dereoh7q3cyuv65m" 
         frontend: typescript
         framework: react
         maxDepth: 3 

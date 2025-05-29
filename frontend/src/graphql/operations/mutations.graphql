@@ -18,9 +18,7 @@ mutation DeleteLedgerEntry($id: ID!) {
   }
 }
 
-mutation AdminCreateLedgerEntry( # Renamed from adminCreateLedgerEntryForUser for consistency
-  $input: AdminCreateLedgerEntryInput!
-) {
+mutation AdminCreateLedgerEntry($input: AdminCreateLedgerEntryInput!) {
   adminCreateLedgerEntry(input: $input) {
     ...LedgerEntryFields
   }
@@ -32,38 +30,26 @@ mutation UpdateAccountStatus($input: UpdateAccountStatusInput!) {
   }
 }
 
-mutation AdminCreateAccountStatus(
-  $ownerId: String!
-  $initialUnapprovedInvoiceValue: Float # Made optional to match common usage
-) {
-  adminCreateAccountStatus(
-    ownerId: $ownerId
-    initialUnapprovedInvoiceValue: $initialUnapprovedInvoiceValue
-  ) {
+mutation AdminCreateAccountStatus($input: AdminCreateAccountStatusInput!) {
+  adminCreateAccountStatus(input: $input) {
     ...AccountStatusFields
   }
 }
 
-mutation AdminAddCashReceipt(
-  $targetOwnerId: String!
-  $amount: Float!
-  $description: String
-) {
-  adminAddCashReceipt(
-    targetOwnerId: $targetOwnerId
-    amount: $amount
-    description: $description
-  ) {
+mutation AdminAddCashReceipt($input: AdminAddCashReceiptInput!) {
+  adminAddCashReceipt(input: $input) {
     ...CurrentAccountTransactionFields
   }
 }
 
-mutation SendPaymentRequestEmail($amount: Float!) {
-  sendPaymentRequestEmail(amount: $amount)
+mutation SendPaymentRequestEmail($input: SendPaymentRequestInput!) {
+  sendPaymentRequestEmail(input: $input)
 }
 
-mutation AdminRequestPaymentForUser(
-  $input: AdminRequestPaymentForUserInput!
-) {
-  adminRequestPaymentForUser(input: $input)
+mutation AdminRequestPaymentForUser($input: AdminRequestPaymentForUserInput!) {
+  adminRequestPaymentForUser(input: $input) {
+    success
+    message
+    transactionId
+  }
 }

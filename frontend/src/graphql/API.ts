@@ -38,6 +38,7 @@ export type LedgerEntry = {
   description?: string | null,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
 };
 
 export type UpdateLedgerEntryInput = {
@@ -66,6 +67,18 @@ export type AccountStatus = {
   totalUnapprovedInvoiceValue: number,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
+};
+
+export type AdminCreateAccountStatusInput = {
+  ownerId: string,
+  initialUnapprovedInvoiceValue: number,
+};
+
+export type AdminAddCashReceiptInput = {
+  targetOwnerId: string,
+  amount: number,
+  description?: string | null,
 };
 
 export type CurrentAccountTransaction = {
@@ -77,11 +90,24 @@ export type CurrentAccountTransaction = {
   description?: string | null,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
+};
+
+export type SendPaymentRequestInput = {
+  amount: number,
 };
 
 export type AdminRequestPaymentForUserInput = {
   targetUserId: string,
   amount: number,
+  paymentDescription?: string | null,
+};
+
+export type AdminPaymentRequestResult = {
+  __typename: "AdminPaymentRequestResult",
+  success: boolean,
+  message?: string | null,
+  transactionId?: string | null,
 };
 
 export type LedgerEntryFilterInput = {
@@ -99,9 +125,14 @@ export type ModelIDFilterInput = {
 export type ModelStringFilterInput = {
   eq?: string | null,
   ne?: string | null,
-  beginsWith?: string | null,
+  le?: string | null,
+  lt?: string | null,
+  ge?: string | null,
+  gt?: string | null,
   contains?: string | null,
   notContains?: string | null,
+  between?: Array< string | null > | null,
+  beginsWith?: string | null,
 };
 
 export type LedgerEntryConnection = {
@@ -114,6 +145,7 @@ export type AccountStatusFilterInput = {
   id?: ModelIDFilterInput | null,
   owner?: ModelStringFilterInput | null,
   totalUnapprovedInvoiceValue?: ModelFloatFilterInput | null,
+  createdAt?: ModelStringFilterInput | null,
 };
 
 export type ModelFloatFilterInput = {
@@ -175,6 +207,7 @@ export type CreateLedgerEntryMutation = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -192,6 +225,7 @@ export type UpdateLedgerEntryMutation = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -209,6 +243,7 @@ export type DeleteLedgerEntryMutation = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -226,6 +261,7 @@ export type AdminCreateLedgerEntryMutation = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -241,12 +277,12 @@ export type UpdateAccountStatusMutation = {
     totalUnapprovedInvoiceValue: number,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
 export type AdminCreateAccountStatusMutationVariables = {
-  ownerId: string,
-  initialUnapprovedInvoiceValue?: number | null,
+  input: AdminCreateAccountStatusInput,
 };
 
 export type AdminCreateAccountStatusMutation = {
@@ -257,13 +293,12 @@ export type AdminCreateAccountStatusMutation = {
     totalUnapprovedInvoiceValue: number,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
 export type AdminAddCashReceiptMutationVariables = {
-  targetOwnerId: string,
-  amount: number,
-  description?: string | null,
+  input: AdminAddCashReceiptInput,
 };
 
 export type AdminAddCashReceiptMutation = {
@@ -276,11 +311,12 @@ export type AdminAddCashReceiptMutation = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
 export type SendPaymentRequestEmailMutationVariables = {
-  amount: number,
+  input: SendPaymentRequestInput,
 };
 
 export type SendPaymentRequestEmailMutation = {
@@ -292,7 +328,12 @@ export type AdminRequestPaymentForUserMutationVariables = {
 };
 
 export type AdminRequestPaymentForUserMutation = {
-  adminRequestPaymentForUser?: string | null,
+  adminRequestPaymentForUser?:  {
+    __typename: "AdminPaymentRequestResult",
+    success: boolean,
+    message?: string | null,
+    transactionId?: string | null,
+  } | null,
 };
 
 export type GetLedgerEntryQueryVariables = {
@@ -309,6 +350,7 @@ export type GetLedgerEntryQuery = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -330,6 +372,7 @@ export type ListLedgerEntriesQuery = {
       description?: string | null,
       createdAt: string,
       updatedAt: string,
+      createdByAdmin?: string | null,
     } | null > | null,
     nextToken?: string | null,
   } | null,
@@ -347,6 +390,7 @@ export type GetAccountStatusQuery = {
     totalUnapprovedInvoiceValue: number,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -367,6 +411,7 @@ export type ListAccountStatusesQuery = {
       totalUnapprovedInvoiceValue: number,
       createdAt: string,
       updatedAt: string,
+      createdByAdmin?: string | null,
     } | null > | null,
     nextToken?: string | null,
   } | null,
@@ -386,6 +431,7 @@ export type GetCurrentAccountTransactionQuery = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -407,6 +453,7 @@ export type ListCurrentAccountTransactionsQuery = {
       description?: string | null,
       createdAt: string,
       updatedAt: string,
+      createdByAdmin?: string | null,
     } | null > | null,
     nextToken?: string | null,
   } | null,
@@ -452,6 +499,7 @@ export type OnCreateLedgerEntrySubscription = {
     description?: string | null,
     createdAt: string,
     updatedAt: string,
+    createdByAdmin?: string | null,
   } | null,
 };
 
@@ -464,6 +512,7 @@ export type LedgerEntryFieldsFragment = {
   description?: string | null,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
 };
 
 export type AccountStatusFieldsFragment = {
@@ -473,6 +522,7 @@ export type AccountStatusFieldsFragment = {
   totalUnapprovedInvoiceValue: number,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
 };
 
 export type CurrentAccountTransactionFieldsFragment = {
@@ -484,6 +534,7 @@ export type CurrentAccountTransactionFieldsFragment = {
   description?: string | null,
   createdAt: string,
   updatedAt: string,
+  createdByAdmin?: string | null,
 };
 
 export type UserAttributeFieldsFragment = {

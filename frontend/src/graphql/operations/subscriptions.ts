@@ -17,6 +17,7 @@ export const onCreateLedgerEntry = /* GraphQL */ `subscription OnCreateLedgerEnt
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }

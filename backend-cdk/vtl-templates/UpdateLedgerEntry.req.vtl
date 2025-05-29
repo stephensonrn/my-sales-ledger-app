@@ -1,66 +1,170 @@
 ## VTL Request Template for Mutation.updateLedgerEntry
 ## Updates a ledger entry.
+## - Includes input validation.
 ## - Non-admins can only update their own entries.
 ## - Admins can update any entry (identified by input.id).
+## - Dynamically builds SET and REMOVE clauses for partial updates.
+## - If an input field is explicitly set to null, it will be REMOVED from the DynamoDB item.
+## - Includes logging for debugging.
 
-#set( $targetId = $ctx.args.input.id )
+#set( $input = $context.args.input )
+#set( $targetId = $input.id )
 
-#if( $util.isNullOrEmpty($targetId) )
+## --- 1. Input Validation ---
+#if( $util.isNullOrBlank($targetId) )
   $util.error("Input 'id' is required to update a ledger entry.", "ValidationException")
 #end
 
-## Initialize attributes for the update operation
-#set( $updateExpression = "SET #updatedAtVal = :updatedAtValue" ) ## Renamed placeholder for clarity
-#set( $expressionAttributeNames = { "#updatedAtVal": "updatedAt" } )
-#set( $expressionAttributeValues = { ":updatedAtValue": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601()) } )
-
-## Dynamically add fields to the update expression if they are provided in the input
-#if( $ctx.args.input.containsKey("type") && !$util.isNullOrBlank($ctx.args.input.type) )
-  #set( $updateExpression = "$updateExpression, #typeVal = :typeValue" )
-  $util.qr($expressionAttributeNames.put("#typeVal", "type"))
-  $util.qr($expressionAttributeValues.put(":typeValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.type)))
+## --- Logging: Input Arguments ---
+$util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Input arguments: $util.toJson($input)"))
+$util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Logged-in user sub: ${context.identity.sub}"))
+#if( $context.identity.groups && !$context.identity.groups.isEmpty() )
+    $util.qr($ctx.log.info("LEDGER_UPDATE_VTL: User Groups: $util.toJson($context.identity.groups)"))
 #end
 
-#if( $ctx.args.input.containsKey("amount") && !$util.isNull($ctx.args.input.amount) )
-  #set( $updateExpression = "$updateExpression, #amountVal = :amountValue" )
-  $util.qr($expressionAttributeNames.put("#amountVal", "amount"))
-  $util.qr($expressionAttributeValues.put(":amountValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.amount)))
+## --- Initialize for Update and Condition Expressions ---
+#set( $updateSetParts = [] )
+#set( $updateRemoveParts = [] )
+#set( $expressionNames = {} )
+#set( $expressionValues = {} )
+
+## Always update 'updatedAt' and potentially 'updatedByAdmin'
+$util.qr($updateSetParts.add("#updatedAt = :updatedAtVal"))
+$util.qr($expressionNames.put("#updatedAt", "updatedAt"))
+$util.qr($expressionValues.put(":updatedAtVal", $util.dynamodb.toDynamoDB($util.time.nowISO8601())))
+
+## Optional: Set who updated it (if admin or for general audit)
+## If you use this, add "updatedBy: String" or "updatedByAdmin: String" to your LedgerEntry type in schema.graphql
+#*
+$util.qr($updateSetParts.add("#updatedBy = :updatedByVal"))
+$util.qr($expressionNames.put("#updatedBy", "updatedByAdmin")) ## Or just "updatedBy"
+$util.qr($expressionValues.put(":updatedByVal", $util.dynamodb.toDynamoDB($context.identity.sub)))
+*#
+
+## --- Dynamically build SET and REMOVE clauses based on input ---
+
+## Field: type
+#if( $input.containsKey("type") )
+  #if( $util.isNull($input.type) )
+    ## If type is explicitly null, consider if it should be REMOVED or if null is a valid state to SET.
+    ## For enums, null is usually not set; this field might always be required for update if present.
+    ## For now, if present and null, we'll skip setting/removing it. Or error:
+    ## $util.error("input.type cannot be null if provided for update.", "ValidationException")
+  #elseif( !$util.isNullOrBlank($input.type) )
+    $util.qr($updateSetParts.add("#type = :typeVal"))
+    $util.qr($expressionNames.put("#type", "type"))
+    $util.qr($expressionValues.put(":typeVal", $util.dynamodb.toDynamoDB($input.type)))
+  #end
 #end
 
-#if( $ctx.args.input.containsKey("description") ) ## Allow null to set/clear description
-  #set( $updateExpression = "$updateExpression, #descriptionVal = :descriptionValue" )
-  $util.qr($expressionAttributeNames.put("#descriptionVal", "description"))
-  $util.qr($expressionAttributeValues.put(":descriptionValue", $util.dynamodb.toDynamoDBJson($ctx.args.input.description)))
+## Field: amount
+#if( $input.containsKey("amount") )
+  #if( $util.isNull($input.amount) )
+    ## Amount typically shouldn't be set to null. Consider erroring or REMOVE if applicable.
+    ## $util.error("input.amount cannot be null if provided for update.", "ValidationException")
+  #else
+    $util.qr($updateSetParts.add("#amount = :amountVal"))
+    $util.qr($expressionNames.put("#amount", "amount"))
+    $util.qr($expressionValues.put(":amountVal", $util.dynamodb.toDynamoDB($input.amount)))
+  #end
 #end
 
-## --- Condition Expression for Authorization ---
-#set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
+## Field: description (Example of using REMOVE if null)
+#if( $input.containsKey("description") )
+  #if( $util.isNull($input.description) )
+    $util.qr($updateRemoveParts.add("#description"))
+    $util.qr($expressionNames.put("#description", "description"))
+  #else
+    $util.qr($updateSetParts.add("#description = :descriptionVal"))
+    $util.qr($expressionNames.put("#description", "description"))
+    $util.qr($expressionValues.put(":descriptionVal", $util.dynamodb.toDynamoDB($input.description)))
+  #end
+#end
 
-#if( !($context.identity.groups && $context.identity.groups.contains("Admin")) )
-  ## Non-admin user: Enforce that they are updating their own entry.
-  $util.qr($conditionExpressionParts.add("#ownerAttributeCond = :loggedInUserSubCond"))
-  $util.qr($expressionAttributeNames.put("#ownerAttributeCond", "owner")) ## Name for condition
-  $util.qr($expressionAttributeValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDBJson($context.identity.sub))) ## Value for condition
+## Add any additional fields for update below using the same pattern (Rec. 2)
+## Example:
+## #if( $input.containsKey("anotherField") )
+##   #if( $util.isNull($input.anotherField) )
+##     $util.qr($updateRemoveParts.add("#anotherField"))
+##     $util.qr($expressionNames.put("#anotherField", "anotherField"))
+##   #else
+##     $util.qr($updateSetParts.add("#anotherField = :anotherFieldValue"))
+##     $util.qr($expressionNames.put("#anotherField", "anotherField"))
+##     $util.qr($expressionValues.put(":anotherFieldValue", $util.dynamodb.toDynamoDB($input.anotherField)))
+##   #end
+## #end
+
+
+## --- Construct final update expression ---
+#set( $finalUpdateExpression = "" )
+#if( !$updateSetParts.isEmpty() )
+  #set( $finalUpdateExpression = "SET " + $util.listJoin(", ", $updateSetParts) )
+#end
+#if( !$updateRemoveParts.isEmpty() )
+  #if( !$finalUpdateExpression.isEmpty() )
+    #set( $finalUpdateExpression = $finalUpdateExpression + " " ) ## Add space if SET was also present
+  #end
+  #set( $finalUpdateExpression = $finalUpdateExpression + "REMOVE " + $util.listJoin(", ", $updateRemoveParts) )
+#end
+
+$util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Constructed Update Expression: $finalUpdateExpression"))
+
+
+## --- Condition Expression for Authorization & Existence ---
+#set( $conditionExpressionParts = ["attribute_exists(id)"] )
+
+#set( $isActuallyAdmin = false )
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+    #set( $isActuallyAdmin = true )
+#end
+
+#if( $isActuallyAdmin == true )
+  $util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Admin user. Base condition: attribute_exists(id)."))
 #else
-  ## Admin user: The base condition "attribute_exists(id)" is sufficient.
-  ## They are trusted to update the record specified by $targetId if it exists.
+  $util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Non-admin user. Adding owner check to condition."))
+  $util.qr($conditionExpressionParts.add("#ownerCond = :ownerCondVal"))
+  $util.qr($expressionNames.put("#ownerCond", "owner"))
+  $util.qr($expressionValues.put(":ownerCondVal", $util.dynamodb.toDynamoDB($context.identity.sub)))
 #end
 
 #set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
+$util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Final Condition Expression: $finalConditionExpression"))
 
-{
+
+## --- DynamoDB UpdateItem Operation ---
+#set( $dynamoDBRequest = {
   "version": "2018-05-29",
   "operation": "UpdateItem",
   "key": {
-    "id": $util.dynamodb.toDynamoDBJson($targetId)
+    "id": $util.dynamodb.toDynamoDB($targetId)
   },
   "update": {
-    "expression": $updateExpression,
-    "expressionNames": $expressionAttributeNames,
-    "expressionValues": $expressionAttributeValues
-  },
-  "condition": {
-    "expression": $finalConditionExpression
-    ## expressionNames and expressionValues for the condition are now part of the main maps
+    "expression": $finalUpdateExpression
   }
-}
+})
+
+## Conditionally add expressionNames and expressionValues if they are not empty
+#if( !$expressionNames.isEmpty() )
+  $util.qr($dynamoDBRequest.update.put("expressionNames", $expressionNames))
+#end
+#if( !$expressionValues.isEmpty() )
+  $util.qr($dynamoDBRequest.update.put("expressionValues", $expressionValues))
+#end
+
+## Add the condition object itself, which will contain the expression string
+## and its specific names/values if we had built them separately for the condition.
+## Since we merged names/values, we only need the expression string here,
+## and DynamoDB will use the top-level expressionNames/Values from the "update" part.
+## However, for clarity and explicit control, it's often better to build condition.expressionNames/Values
+## if the condition part uses different placeholders, but current approach of merging into main EAN/EAV is fine.
+$util.qr($dynamoDBRequest.put("condition", {"expression": $finalConditionExpression}))
+## If conditionExpressionNames/Values were built separately for $finalConditionExpression:
+## "condition": {
+##   "expression": $finalConditionExpression,
+##   "expressionNames": $conditionExpressionNames,  // if any specific to condition
+##   "expressionValues": $conditionExpressionValues // if any specific to condition
+## }
+
+$util.qr($ctx.log.info("LEDGER_UPDATE_VTL: Final DynamoDB Request Object: $util.toJson($dynamoDBRequest)"))
+
+$util.toJson($dynamoDBRequest)

@@ -6,8 +6,8 @@ fragment LedgerEntryFields on LedgerEntry {
   description
   createdAt
   updatedAt
+  createdByAdmin # Assuming this is in your LedgerEntry type in schema.graphql
   __typename
-  # createdByAdmin # Uncomment if you added this to your schema and Lambda
 }
 
 fragment AccountStatusFields on AccountStatus {
@@ -16,8 +16,8 @@ fragment AccountStatusFields on AccountStatus {
   totalUnapprovedInvoiceValue
   createdAt
   updatedAt
+  createdByAdmin # Assuming this is in your AccountStatus type in schema.graphql
   __typename
-  # createdByAdmin # Uncomment if you added this
 }
 
 fragment CurrentAccountTransactionFields on CurrentAccountTransaction {
@@ -28,8 +28,8 @@ fragment CurrentAccountTransactionFields on CurrentAccountTransaction {
   description
   createdAt
   updatedAt
+  createdByAdmin # Assuming this is in your CurrentAccountTransaction type in schema.graphql
   __typename
-  # createdByAdmin # Uncomment if you added this
 }
 
 fragment UserAttributeFields on UserAttribute {

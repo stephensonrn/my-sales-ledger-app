@@ -1,20 +1,26 @@
 {
-  "name": "sendpaymentrequest",
+  "name": "sendpaymentrequest-lambda",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Handles sending payment request emails and recording transactions.",
+  "main": "index.js", 
+  "type": "module",
   "scripts": {
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.799.0",
-    "@aws-sdk/client-dynamodb": "^3.799.0",
-    "@aws-sdk/client-ses": "^3.797.0",
-    "@aws-sdk/lib-dynamodb": "^3.799.0",
-    "ulid": "^3.0.0"
+    "@aws-sdk/client-cognito-identity-provider": "^3.585.0", 
+    "@aws-sdk/client-dynamodb": "^3.585.0",
+    "@aws-sdk/client-ses": "^3.585.0", 
+    "@aws-sdk/lib-dynamodb": "^3.585.0",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.138",
+    "@types/node": "^18.19.3", 
+    "typescript": "^5.4.5"
   }
 }

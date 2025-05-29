@@ -2,9 +2,11 @@
 import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Button, TextField, Flex, Heading, Alert, View } from '@aws-amplify/ui-react';
+
+// Corrected imports from the single generated API file
 import {
-    AdminCreateAccountStatusDocument,
-    type AdminCreateAccountStatusInput, // This now directly matches schema args
+    adminCreateAccountStatus,
+    type AdminCreateAccountStatusInput,
     type AdminCreateAccountStatusMutation,
     type AccountStatus 
 } from './graphql/API'; 
@@ -34,19 +36,17 @@ function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }:
       return;
     }
 
-    // Your schema for adminCreateAccountStatus takes direct arguments, not an input object
-    // adminCreateAccountStatus(ownerId: String!, initialUnapprovedInvoiceValue: Float): AccountStatus
-    const variables = {
+    // Ensure this input structure matches your AdminCreateAccountStatusInput type
+    const input: AdminCreateAccountStatusInput = {
       ownerId: ownerId, 
       initialUnapprovedInvoiceValue: numericInitialValue,
     };
 
     try {
-      console.log("CreateAccountStatusForm: Attempting to create status with variables:", variables);
-      // Adjust AdminCreateAccountStatusMutation if its variable type is not {input: ...}
-      const response = await client.graphql<AdminCreateAccountStatusMutation>({ // Type might be just {adminCreateAccountStatus: AccountStatus | null}
+      console.log("CreateAccountStatusForm: Attempting to create status with input:", input);
+      const response = await client.graphql<AdminCreateAccountStatusMutation>({
         query: AdminCreateAccountStatusDocument,
-        variables: variables, // Pass variables directly
+        variables: { input: input }, 
         authMode: 'userPool' 
       });
       console.log("CreateAccountStatusForm: Response from mutation:", response);
@@ -59,7 +59,7 @@ function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }:
         onStatusCreated(newStatus as AccountStatus); 
         setInitialValue('0'); 
       } else {
-        throw new Error("Failed to create account status, no data returned.");
+        throw new Error("Failed to create account status, no data returned from server.");
       }
     } catch (err: any) {
       console.error("CreateAccountStatusForm: Error creating account status:", err);

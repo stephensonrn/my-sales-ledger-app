@@ -1,14 +1,16 @@
 // src/PaymentRequestForm.tsx
 import React, { useState } from 'react';
 import { Button, TextField, Flex, Alert, Text, View, Heading } from '@aws-amplify/ui-react';
+// Import types if your props become more specific, e.g., for onSubmitRequest's arguments
+// import type { AdminRequestPaymentForUserInput, SendPaymentRequestInput } from './graphql/API';
 
 interface PaymentRequestFormProps {
   netAvailability: number;
-  onSubmitRequest: (amount: number) => Promise<void>; // Made async to align with typical API calls
+  onSubmitRequest: (amount: number) => Promise<void>; 
   isLoading: boolean;
   requestError: string | null;
   requestSuccess: string | null;
-  disabled?: boolean;
+  disabled?: boolean; // Optional for parent to disable
 }
 
 function PaymentRequestForm({
@@ -36,13 +38,14 @@ function PaymentRequestForm({
       return;
     }
 
-    await onSubmitRequest(numericAmount); // Call parent handler
-    setAmount(''); // Clear amount on successful submission attempt
+    await onSubmitRequest(numericAmount); 
+    setAmount(''); 
   };
 
   return (
     <View as="form" onSubmit={handleSubmit} marginTop="medium" border="1px solid #ddd" padding="medium">
-      <Heading level={5} marginBottom="small">Request Payment</Heading>
+      {/* <Heading level={5} marginBottom="small">Request Payment</Heading> */}
+      {/* Heading moved to SalesLedger.tsx or AdminPage.tsx potentially */}
       <Text fontSize="small" color="font.secondary" marginBottom="small">
         Net Available for Request: £{netAvailability.toFixed(2)}
       </Text>
@@ -55,14 +58,20 @@ function PaymentRequestForm({
           type="number"
           step="0.01"
           min="0.01"
-          max={netAvailability.toFixed(2)}
+          // Consider dynamically setting max based on netAvailability but be careful with string vs number
+          // max={netAvailability > 0 ? netAvailability.toFixed(2) : undefined} 
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
-          disabled={isLoading || disabled}
+          disabled={isLoading || disabled || netAvailability <= 0}
           placeholder="e.g., 100.00"
         />
-        <Button type="submit" variation="primary" isLoading={isLoading} disabled={isLoading || disabled || netAvailability <= 0}>
+        <Button 
+            type="submit" 
+            variation="primary" 
+            isLoading={isLoading} 
+            disabled={isLoading || disabled || netAvailability <= 0}
+        >
           Submit Payment Request
         </Button>
       </Flex>

@@ -1,4 +1,7 @@
 // backend-cdk/lib/backend-cdk-stack.ts
+// ATTEMPT 7 - May 29 - Includes enhanced logged response VTL
+// ATTEMPT 8
+
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -10,7 +13,7 @@ import * as path from 'path';
 import { RemovalPolicy, CfnOutput, Duration } from 'aws-cdk-lib';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as appsync from '@aws-cdk/aws-appsync-alpha'; // Using alpha for existing pattern
+import * as appsync from '@aws-cdk/aws-appsync-alpha';
 
 export class BackendCdkStack extends cdk.Stack {
   // Public properties
@@ -29,13 +32,14 @@ export class BackendCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // --- Define Custom Attribute for Company Name ---
+    cdk.Tags.of(this).add('Project', 'SalesLedger');
+    cdk.Tags.of(this).add('Environment', props?.env?.region || 'dev');
+
     const companyNameCustomAttributeDefinition = new cognito.StringAttribute({
       mutable: true,
     });
     this.companyNameAttributeFullName = `custom:company_name`;
 
-    // --- Cognito User Pool ---
     this.userPool = new cognito.UserPool(this, 'SalesLedgerUserPool', {
       userPoolName: `SalesLedgerUserPool-${this.stackName}`,
       selfSignUpEnabled: true,
@@ -52,10 +56,9 @@ export class BackendCdkStack extends cdk.Stack {
         requireDigits: true, requireSymbols: false,
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
-      removalPolicy: RemovalPolicy.DESTROY, // Change to RETAIN for production
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // --- Cognito User Pool Client ---
     this.userPoolClient = new cognito.UserPoolClient(this, 'SalesLedgerAppClient', {
       userPool: this.userPool,
       userPoolClientName: `SalesLedgerWebAppClient-${this.stackName}`,
@@ -65,55 +68,51 @@ export class BackendCdkStack extends cdk.Stack {
           cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL,
           cognito.OAuthScope.PROFILE, cognito.OAuthScope.COGNITO_ADMIN
         ],
-        // callbackUrls: ['http://localhost:5173/callback', 'https://www.salesledgersync.com/callback'], // Ensure these are correct for your environments
-        // logoutUrls: ['http://localhost:5173/logout', 'https://www.salesledgersync.com/logout'],   // Ensure these are correct
+        callbackUrls: [
+          'http://localhost:5173/callback',        
+          `https://www.salesledgersync.com/callback` 
+        ],
+        logoutUrls: [
+          'http://localhost:5173/logout', 
+          `https://www.salesledgersync.com/logout`
+        ],
       },
-      readAttributes: new cognito.ClientAttributes()
-        .withStandardAttributes({ email: true, emailVerified: true })
-        .withCustomAttributes('company_name'),
-      writeAttributes: new cognito.ClientAttributes()
-        .withStandardAttributes({ email: true })
-        .withCustomAttributes('company_name'),
+      readAttributes: new cognito.ClientAttributes().withStandardAttributes({ email: true, emailVerified: true }).withCustomAttributes('company_name'),
+      writeAttributes: new cognito.ClientAttributes().withStandardAttributes({ email: true }).withCustomAttributes('company_name'),
     });
 
-    // --- Create Admin Group ---
     new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'Admin', 
       description: 'Administrators with elevated privileges',
     });
 
-    // --- AppSync GraphQL API ---
     this.graphqlApi = new appsync.GraphqlApi(this, 'SalesLedgerAppSyncApi', {
       name: `SalesLedgerApi-${this.stackName}`,
       schema: appsync.SchemaFile.fromAsset(path.join(__dirname, '../graphql/schema.graphql')),
       authorizationConfig: {
         defaultAuthorization: {
           authorizationType: appsync.AuthorizationType.USER_POOL,
-          userPoolConfig: {
-            userPool: this.userPool,
-            defaultAction: appsync.UserPoolDefaultAction.ALLOW,
-          },
+          userPoolConfig: { userPool: this.userPool, defaultAction: appsync.UserPoolDefaultAction.ALLOW },
         },
-        // If any Lambda needs to call GraphQL via IAM auth:
-        // additionalAuthorizationModes: [{ authorizationType: appsync.AuthorizationType.IAM }],
+        additionalAuthorizationModes: [{ authorizationType: appsync.AuthorizationType.IAM }],
       },
       logConfig: { fieldLogLevel: appsync.FieldLogLevel.ALL, excludeVerboseContent: false },
       xrayEnabled: true,
     });
 
-    // --- Define DynamoDB Tables ---
     this.ledgerEntryTable = new dynamodb.Table(this, 'LedgerEntryTable', {
       tableName: `LedgerEntry-${this.stackName}`,
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    this.ledgerEntryTable.addGlobalSecondaryIndex({
-      indexName: 'byOwner',
-      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-      // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, // Add if needed
-    });
+    // --- byOwner GSI for LedgerEntryTable REMAINS COMMENTED OUT (Step 1 of GSI update) ---
+    // this.ledgerEntryTable.addGlobalSecondaryIndex({
+    //   indexName: 'byOwner',
+    //   partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+    //   // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+    // });
 
     this.accountStatusTable = new dynamodb.Table(this, 'AccountStatusTable', {
       tableName: `AccountStatus-${this.stackName}`,
@@ -121,7 +120,7 @@ export class BackendCdkStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    this.accountStatusTable.addGlobalSecondaryIndex({
+    this.accountStatusTable.addGlobalSecondaryIndex({ 
       indexName: 'byOwner',
       partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
     });
@@ -132,29 +131,83 @@ export class BackendCdkStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    this.transactionTable.addGlobalSecondaryIndex({
-      indexName: 'byOwner',
-      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-      // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, // Add if needed
+    // --- byOwner GSI for TransactionTable REMAINS COMMENTED OUT (Step 1 of GSI update) ---
+    // this.transactionTable.addGlobalSecondaryIndex({
+    //   indexName: 'byOwner',
+    //   partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+    //   // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+    // });
+
+    const nodeJsFunctionProps: Omit<lambda_nodejs.NodejsFunctionProps, 'entry' | 'handler' | 'role' | 'functionName' | 'environment'> = {
+        runtime: lambda.Runtime.NODEJS_20_X,
+        bundling: {
+            minify: true, 
+            sourceMap: true,
+            target: 'node20', 
+        },
+    };
+
+    const sendPaymentRequestRole = new iam.Role(this, 'SendPaymentRequestRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')] });
+    this.sendPaymentRequestFunction = new lambda_nodejs.NodejsFunction(this, 'SendPaymentRequestFn', {
+        ...nodeJsFunctionProps,
+        functionName: `sendPaymentRequestFunction-${this.stackName}`,
+        handler: 'handler',
+        entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'),
+        role: sendPaymentRequestRole,
+        timeout: Duration.seconds(30),
+        environment: {
+            FROM_EMAIL: 'ross@aurumif.com', 
+            USER_POOL_ID: this.userPool.userPoolId,
+            CURRENT_ACCT_TABLE_NAME: this.transactionTable.tableName,
+        },
+        bundling: { 
+            ...nodeJsFunctionProps.bundling,
+            externalModules: ['@aws-sdk/client-ses', '@aws-sdk/client-cognito-identity-provider', '@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb'],
+        }
     });
 
-    // --- Define Lambda Functions ---
-    const sendPaymentRequestRole = new iam.Role(this, 'SendPaymentRequestRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')] });
-    this.sendPaymentRequestFunction = new lambda_nodejs.NodejsFunction(this, 'SendPaymentRequestFn', { functionName: `sendPaymentRequestFunction-${this.stackName}`, runtime: lambda.Runtime.NODEJS_20_X, handler: 'handler', entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'), role: sendPaymentRequestRole, timeout: Duration.seconds(30), environment: { FROM_EMAIL: 'ross@aurumif.com', USER_POOL_ID: this.userPool.userPoolId, CURRENT_ACCT_TABLE_NAME: this.transactionTable.tableName }});
-
     const adminDataActionsRole = new iam.Role(this, 'AdminDataActionsRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')] });
-    this.adminDataActionsFunction = new lambda_nodejs.NodejsFunction(this, 'AdminDataActionsFn', { functionName: `adminDataActionsFunction-${this.stackName}`, runtime: lambda.Runtime.NODEJS_20_X, handler: 'handler', entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'), role: adminDataActionsRole, timeout: Duration.seconds(15), environment: { USER_POOL_ID: this.userPool.userPoolId, CURRENT_ACCT_TABLE_NAME: this.transactionTable.tableName, LEDGER_ENTRY_TABLE_NAME: this.ledgerEntryTable.tableName, ACCOUNT_STATUS_TABLE_NAME: this.accountStatusTable.tableName } });
+    this.adminDataActionsFunction = new lambda_nodejs.NodejsFunction(this, 'AdminDataActionsFn', {
+        ...nodeJsFunctionProps,
+        functionName: `adminDataActionsFunction-${this.stackName}`,
+        handler: 'handler',
+        entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'),
+        role: adminDataActionsRole,
+        timeout: Duration.seconds(30), 
+        environment: {
+            USER_POOL_ID: this.userPool.userPoolId,
+            CURRENT_ACCT_TABLE_NAME: this.transactionTable.tableName,
+            LEDGER_ENTRY_TABLE_NAME: this.ledgerEntryTable.tableName,
+            ACCOUNT_STATUS_TABLE_NAME: this.accountStatusTable.tableName,
+        },
+        bundling: {
+            ...nodeJsFunctionProps.bundling,
+            externalModules: ['@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb', '@aws-sdk/client-cognito-identity-provider', '@aws-sdk/client-ses'],
+        }
+    });
 
     const adminListUsersRole = new iam.Role(this, 'AdminListUsersRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')] });
-    this.adminListUsersFunction = new lambda_nodejs.NodejsFunction(this, 'AdminListUsersFn', { functionName: `adminListUsersFunction-${this.stackName}`, runtime: lambda.Runtime.NODEJS_20_X, handler: 'handler', entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'), role: adminListUsersRole, timeout: Duration.seconds(15), environment: { USER_POOL_ID: this.userPool.userPoolId } });
+    this.adminListUsersFunction = new lambda_nodejs.NodejsFunction(this, 'AdminListUsersFn', {
+        ...nodeJsFunctionProps,
+        functionName: `adminListUsersFunction-${this.stackName}`,
+        handler: 'handler',
+        entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'),
+        role: adminListUsersRole,
+        timeout: Duration.seconds(15),
+        environment: { USER_POOL_ID: this.userPool.userPoolId },
+        bundling: {
+            ...nodeJsFunctionProps.bundling,
+            externalModules: ['@aws-sdk/client-cognito-identity-provider'],
+        }
+    });
     
     const monthlyReportMailerRole = new iam.Role(this, 'MonthlyReportMailerRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')]
     });
     this.monthlyReportMailerFunction = new lambda_nodejs.NodejsFunction(this, 'MonthlyReportMailerFunction', {
+      ...nodeJsFunctionProps,
       functionName: `monthlyReportMailerFunction-${this.stackName}`,
-      runtime: lambda.Runtime.NODEJS_20_X, // Pinned version
       entry: path.join(__dirname, '../lambda-handlers/monthlyReportMailer/index.ts'),
       handler: 'handler',
       role: monthlyReportMailerRole,
@@ -168,7 +221,10 @@ export class BackendCdkStack extends cdk.Stack {
         SES_FROM_ADDRESS: 'ross@aurumif.com', 
         ADMIN_GROUP_NAME: 'Admin',
       },
-      bundling: { minify: false, sourceMap: true, externalModules: ['@aws-sdk/*'] },
+      bundling: {
+        ...nodeJsFunctionProps.bundling,
+        externalModules: ['@aws-sdk/client-cognito-identity-provider', '@aws-sdk/client-dynamodb', '@aws-sdk/lib-dynamodb', '@aws-sdk/client-ses'],
+      }
     });
 
     const scheduleRule = new events.Rule(this, 'MonthlyReportScheduleRule', {
@@ -179,22 +235,24 @@ export class BackendCdkStack extends cdk.Stack {
     scheduleRule.addTarget(new targets.LambdaFunction(this.monthlyReportMailerFunction));
 
     // --- Apply Permissions to Lambdas ---
-    if (sendPaymentRequestRole) { // Use the role object directly
-      sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] }));
+    if (sendPaymentRequestRole) {
+      sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); // TODO: Scope down SES resources
       sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [this.userPool.userPoolArn] }));
       this.transactionTable.grantWriteData(sendPaymentRequestRole);
     }
-    if (adminDataActionsRole) { // Use the role object directly
+    if (adminDataActionsRole) {
       this.transactionTable.grantReadWriteData(adminDataActionsRole); 
       this.ledgerEntryTable.grantReadWriteData(adminDataActionsRole);  
       this.accountStatusTable.grantReadWriteData(adminDataActionsRole);
+      adminDataActionsRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); // TODO: Scope down
+      adminDataActionsRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [this.userPool.userPoolArn] }));
     }
-    if (adminListUsersRole) { // Use the role object directly
+    if (adminListUsersRole) {
       adminListUsersRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:ListUsers', 'cognito-idp:ListGroupsForUser'], resources: [this.userPool.userPoolArn] }));
     }
-    if (monthlyReportMailerRole) { // Use the role object directly
+    if (monthlyReportMailerRole) {
       monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:ListUsers', 'cognito-idp:ListGroupsForUser'], resources: [this.userPool.userPoolArn] }));
-      monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['ses:SendRawEmail'], resources: ['*'] }));
+      monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['ses:SendRawEmail'], resources: ['*'] })); // TODO: Scope down SES resources
       this.ledgerEntryTable.grantReadData(monthlyReportMailerRole);
       this.transactionTable.grantReadData(monthlyReportMailerRole);
       this.accountStatusTable.grantReadData(monthlyReportMailerRole);
@@ -208,37 +266,57 @@ export class BackendCdkStack extends cdk.Stack {
     const adminDataActionsDataSource = this.graphqlApi.addLambdaDataSource('AdminDataActionsDataSource', this.adminDataActionsFunction);
     const adminListUsersDataSource = this.graphqlApi.addLambdaDataSource('AdminListUsersDataSource', this.adminListUsersFunction);
 
-    // --- Grant AppSync Data Sources Permissions to DynamoDB tables ---
     this.ledgerEntryTable.grantReadWriteData(ledgerEntryDataSource.grantPrincipal);
     this.accountStatusTable.grantReadWriteData(accountStatusDataSource.grantPrincipal);
     this.transactionTable.grantReadWriteData(transactionDataSource.grantPrincipal);
 
     // --- Create and Attach AppSync Resolvers ---
+
+    // **** ENHANCED listResponseMappingTemplate with DETAILED LOGGING (V2) ****
     const listResponseMappingTemplate = appsync.MappingTemplate.fromString(`
+      ## RESP_VTL_LOGGED_ATTEMPT_7 - May 29
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG --- List Query Response (Field: " + $ctx.info.fieldName + ") ---"))
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.error (from DDB or request VTL): " + $util.toJson($ctx.error)))
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result (raw from DDB): " + $util.toJson($ctx.result)))
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Raw nextToken from ctx.result: " + $util.toJson($ctx.result.nextToken)))
+
       #if($ctx.error)
+        $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Error detected in ctx.error. Calling $util.error to return GraphQL error."))
         $util.error($ctx.error.message, $ctx.error.type)
       #end
+
+      #set( $processedItems = [] ) 
+      #if( !$util.isNull($ctx.result) && !$util.isNull($ctx.result.items) )
+        #if( !$util.isList($ctx.result.items) )
+          $util.qr($ctx.log.warn("RESPONSE_MAPPER_DEBUG: Warning - ctx.result.items is present but not a list. Value: " + $util.toJson($ctx.result.items)))
+        #else
+          #set( $processedItems = $ctx.result.items )
+        #end
+      #else
+        $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result or ctx.result.items is null/undefined. items defaults to empty list [] for response."))
+      #end
+
+      #set( $processedNextToken = $util.defaultIfNullOrBlank($ctx.result.nextToken, null) )
+      
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed items for final map (pre-AppSync-serialization): " + $util.toJson($processedItems)))
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed nextToken for final map (pre-AppSync-serialization): " + $util.toJson($processedNextToken)))
+
       {
-        "items": $util.toJson($ctx.result.items),
-        "nextToken": $util.toJson($util.defaultIfNullOrBlank($ctx.result.nextToken, null))
+        "items": $processedItems,
+        "nextToken": $processedNextToken
       }
     `);
+    // **** END ENHANCED listResponseMappingTemplate ****
+
     const getItemResponseMappingTemplate = appsync.MappingTemplate.dynamoDbResultItem();
 
     // == LedgerEntry Resolvers ==
     ledgerEntryDataSource.createResolver('GetLedgerEntryResolver', { typeName: 'Query', fieldName: 'getLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
     ledgerEntryDataSource.createResolver('ListLedgerEntriesResolver', { typeName: 'Query', fieldName: 'listLedgerEntries', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListLedgerEntries.req.vtl')), responseMappingTemplate: listResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('CreateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'createLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.dynamoDbPutItem(appsync.PrimaryKey.partition('id').auto(), appsync.Values.projecting('input').attribute('owner').is('$context.identity.sub').attribute('createdAt').is('$util.time.nowISO8601()').attribute('updatedAt').is('$util.time.nowISO8601()')), responseMappingTemplate: getItemResponseMappingTemplate });
+    ledgerEntryDataSource.createResolver('CreateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'createLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/CreateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
     ledgerEntryDataSource.createResolver('UpdateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'updateLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
     ledgerEntryDataSource.createResolver('DeleteLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'deleteLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/DeleteLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
-
-    // *** NEW: Resolver for adminCreateLedgerEntry Mutation ***
-    ledgerEntryDataSource.createResolver('AdminCreateLedgerEntryResolver', {
-        typeName: 'Mutation',
-        fieldName: 'adminCreateLedgerEntry', // Matches the field in your schema.graphql
-        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateLedgerEntry.req.vtl')), // You will need to create this VTL file
-        responseMappingTemplate: getItemResponseMappingTemplate
-    });
+    ledgerEntryDataSource.createResolver('AdminCreateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'adminCreateLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
 
     // == AccountStatus Resolvers ==
     accountStatusDataSource.createResolver('GetAccountStatusResolver', { typeName: 'Query', fieldName: 'getAccountStatus', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
@@ -254,25 +332,14 @@ export class BackendCdkStack extends cdk.Stack {
     adminDataActionsDataSource.createResolver('AdminCreateAccountStatusResolver', { typeName: 'Mutation', fieldName: 'adminCreateAccountStatus', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
     sendPaymentRequestDataSource.createResolver('SendPaymentRequestEmailResolver', { typeName: 'Mutation', fieldName: 'sendPaymentRequestEmail', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
     adminListUsersDataSource.createResolver('AdminListUsersResolver', { typeName: 'Query', fieldName: 'adminListUsers', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
-
-    // *** NEW: Resolver for adminRequestPaymentForUser Mutation ***
-    // Option: Route to existing sendPaymentRequestFunction, but the Lambda needs to handle targetUserId
-    // Or route to adminDataActionsFunction if that's more appropriate for admin-initiated payment logic
-    // For this example, let's assume you'll adapt adminDataActionsFunction or create a new action within it.
-    // Ensure the Lambda code for adminDataActionsFunction can handle an event for 'adminRequestPaymentForUser'.
-    adminDataActionsDataSource.createResolver('AdminRequestPaymentForUserResolver', {
-        typeName: 'Mutation',
-        fieldName: 'adminRequestPaymentForUser', // Matches the field in your schema.graphql
-        requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), // Passes all arguments
-        responseMappingTemplate: appsync.MappingTemplate.lambdaResult()
-    });
+    adminDataActionsDataSource.createResolver('AdminRequestPaymentForUserResolver', { typeName: 'Mutation', fieldName: 'adminRequestPaymentForUser', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
 
     // --- Stack Outputs ---
     new CfnOutput(this, 'RegionOutput', { value: this.region });
     new CfnOutput(this, 'UserPoolIdOutput', { value: this.userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientIdOutput', { value: this.userPoolClient.userPoolClientId });
     new CfnOutput(this, 'GraphQLAPIURLOutput', { value: this.graphqlApi.graphqlUrl });
-    new CfnOutput(this, 'GraphQLAPIIDOutput', { value: this.graphqlApi.apiId });
+    new CfnOutput(this, 'GraphQLAPIIDOutput', { value: this.graphqlApi.apiId }); 
     new CfnOutput(this, 'LedgerEntryTableNameOutput', { value: this.ledgerEntryTable.tableName });
     new CfnOutput(this, 'AccountStatusTableNameOutput', { value: this.accountStatusTable.tableName });
     new CfnOutput(this, 'TransactionTableNameOutput', { value: this.transactionTable.tableName });

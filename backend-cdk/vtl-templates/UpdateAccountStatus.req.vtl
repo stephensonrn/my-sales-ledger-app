@@ -3,54 +3,54 @@
 ## - Non-admins can only update their own account status (where input.id matches their sub).
 ## - Admins can update the account status for any user specified by input.id.
 
-#set( $targetId = $ctx.args.input.id ) ## The ID of the AccountStatus record to update
+#set( $targetId = $ctx.args.input.id )
 
-#if( $util.isNullOrEmpty($targetId) )
+#if( $util.isNullOrBlank($targetId) )
   $util.error("Input 'id' is required to update an account status.", "ValidationException")
 #end
 
 ## Define the update expression, names, and values
-#set( $updateExpression = "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValue, #updatedAt = :updatedAt" )
+#set( $updateExpression = "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValueVal, #updatedAt = :updatedAtVal" )
 #set( $expressionNames = {
   "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
   "#updatedAt": "updatedAt"
 })
 #set( $expressionValues = {
-  ":totalUnapprovedInvoiceValue": $util.dynamodb.toDynamoDBJson($ctx.args.input.totalUnapprovedInvoiceValue),
-  ":updatedAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
+  ":totalUnapprovedInvoiceValueVal": $util.dynamodb.toDynamoDB($ctx.args.input.totalUnapprovedInvoiceValue),
+  ":updatedAtVal": $util.dynamodb.toDynamoDB($util.time.nowISO8601())
 })
 
 ## Define the condition expression based on user role
-#set( $condition = {
-  "expression": "attribute_exists(id)" ## Base condition: item must exist
-})
+#set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
 
-#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
-  ## Admin user: No additional ownership condition needed beyond attribute_exists(id).
-  ## They are trusted to update the record specified by $targetId.
-  $util.qr($expressionNames.put("#ownerAttribute", "owner")) ## Still good to have if you add owner to condition later
-  ## No need to add :ownerIdentity to expressionValues unless the condition uses it
-#else
+#if( !($context.identity.groups && $context.identity.groups.contains("Admin")) )
   ## Non-admin user: Enforce that they are updating their own account status.
-  ## This condition checks if the 'id' of the item matches the logged-in user's sub.
-  ## If your AccountStatusTable also has a separate 'owner' field that stores the user's sub,
-  ## you would change "#ownerAttribute" to "owner" and use that in the condition.
-  ## For this example, we assume 'id' IS the owner identifier.
-  $util.qr($condition.put("expression", $condition.expression + " AND #itemId = :loggedInUserSub"))
-  $util.qr($expressionNames.put("#itemId", "id")) 
-  $util.qr($expressionValues.put(":loggedInUserSub", $util.dynamodb.toDynamoDBJson($context.identity.sub)))
+  ## Assumes 'id' of AccountStatus item IS the owner's sub.
+  $util.qr($conditionExpressionParts.add("#itemIdCond = :loggedInUserSubCond"))
+  $util.qr($expressionNames.put("#itemIdCond", "id")) 
+  $util.qr($expressionValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDB($context.identity.sub)))
+#else
+  ## Admin user: The base condition "attribute_exists(id)" is sufficient.
+  ## They are trusted to update the record specified by $targetId if it exists.
 #end
+
+#set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
 
 {
   "version": "2018-05-29",
   "operation": "UpdateItem",
   "key": {
-    "id": $util.dynamodb.toDynamoDBJson($targetId)
+    "id": $util.dynamodb.toDynamoDB($targetId) ## Using toDynamoDB
   },
   "update": {
     "expression": $updateExpression,
-    "expressionNames": $expressionNames,     ## Use the potentially expanded map
-    "expressionValues": $expressionValues    ## Use the potentially expanded map
+    "expressionNames": $expressionNames,
+    "expressionValues": $expressionValues
   },
-  "condition": $condition ## Apply the constructed condition
+  "condition": {
+    "expression": $finalConditionExpression
+    ## expressionNames and expressionValues for the condition are now part
+    ## of the main maps ($expressionNames, $expressionValues) used by the "update" block.
+    ## DynamoDB will use these for both.
+  }
 }

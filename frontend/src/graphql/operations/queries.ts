@@ -17,6 +17,7 @@ export const getLedgerEntry = /* GraphQL */ `query GetLedgerEntry($id: ID!) {
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -38,6 +39,7 @@ export const listLedgerEntries = /* GraphQL */ `query ListLedgerEntries(
       description
       createdAt
       updatedAt
+      createdByAdmin
       __typename
     }
     nextToken
@@ -55,6 +57,7 @@ export const getAccountStatus = /* GraphQL */ `query GetAccountStatus($id: ID!) 
     totalUnapprovedInvoiceValue
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -80,6 +83,7 @@ export const listAccountStatuses = /* GraphQL */ `query ListAccountStatuses(
       totalUnapprovedInvoiceValue
       createdAt
       updatedAt
+      createdByAdmin
       __typename
     }
     nextToken
@@ -99,6 +103,7 @@ export const getCurrentAccountTransaction = /* GraphQL */ `query GetCurrentAccou
     description
     createdAt
     updatedAt
+    createdByAdmin
     __typename
   }
 }
@@ -124,6 +129,7 @@ export const listCurrentAccountTransactions = /* GraphQL */ `query ListCurrentAc
       description
       createdAt
       updatedAt
+      createdByAdmin
       __typename
     }
     nextToken

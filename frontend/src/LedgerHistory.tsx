@@ -1,51 +1,62 @@
 // src/LedgerHistory.tsx
 import React from 'react';
-import { Text, Loader, View } from '@aws-amplify/ui-react';
-import { LedgerEntry, CurrentAccountTransaction } from './graphql/API'; // Assuming types are here
+import { Text, Loader, View, Table, TableHead, TableRow, TableCell, TableBody, Badge } from '@aws-amplify/ui-react';
+
+// Corrected imports from the single generated API file
+import type { LedgerEntry, CurrentAccountTransaction } from './graphql/API'; 
+
+// Define a common shape or use a union type more explicitly if fields differ significantly
+type HistoryEntry = Pick<LedgerEntry | CurrentAccountTransaction, 
+    'id' | 'createdAt' | 'type' | 'description' | 'amount'
+>;
 
 interface LedgerHistoryProps {
-  entries: (LedgerEntry | CurrentAccountTransaction)[]; // Array of transactions/entries
-  historyType: 'sales' | 'account'; // To differentiate styling or columns if needed
+  entries: HistoryEntry[]; 
+  historyType: 'sales' | 'account'; 
   isLoading: boolean;
 }
 
 function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
-  const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' };
-  const thTdStyle: React.CSSProperties = { border: '1px solid #ddd', padding: '8px', textAlign: 'left' };
-  const thStyle: React.CSSProperties = { ...thTdStyle, backgroundColor: '#f4f4f4', fontWeight: 'bold' };
-
   if (isLoading) {
     return <Loader />;
   }
 
-  if (entries.length === 0) {
+  if (!entries || entries.length === 0) {
     return <Text>No transactions to display.</Text>;
   }
 
   return (
-    <View style={{ maxHeight: '400px', overflowY: 'auto' }}>
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={thStyle}>Date</th>
-            <th style={thStyle}>Type</th>
-            <th style={thStyle}>Description</th>
-            <th style={thStyle} align="right">Amount (£)</th>
-            {/* <th style={thStyle}>ID</th> */}
-          </tr>
-        </thead>
-        <tbody>
+    <View style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ddd' }}>
+      <Table highlightOnHover={true} size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell as="th">Date</TableCell>
+            <TableCell as="th">Type</TableCell>
+            <TableCell as="th">Description</TableCell>
+            <TableCell as="th" textAlign="right">Amount (£)</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td style={thTdStyle}>{new Date(entry.createdAt).toLocaleDateString()}</td>
-              <td style={thTdStyle}>{entry.type}</td>
-              <td style={thTdStyle}>{entry.description || '-'}</td>
-              <td style={{...thTdStyle, textAlign: 'right'}}>{(entry.amount || 0).toFixed(2)}</td>
-              {/* <td style={thTdStyle}><code>{entry.id.substring(0,8)}</code></td> */}
-            </tr>
+            <TableRow key={entry.id}>
+              <TableCell>{new Date(entry.createdAt).toLocaleDateString()}</TableCell>
+              <TableCell>
+                <Badge 
+                    variation={
+                        entry.type.includes('INVOICE') || entry.type.includes('INCREASE') || entry.type.includes('PAYMENT_REQUEST') ? 'info' :
+                        entry.type.includes('CREDIT') || entry.type.includes('DECREASE') ? 'warning' :
+                        entry.type.includes('CASH_RECEIPT') ? 'success' : undefined
+                    }
+                >
+                    {entry.type.replace('_', ' ')}
+                </Badge>
+                </TableCell>
+              <TableCell>{entry.description || '-'}</TableCell>
+              <TableCell textAlign="right">{(entry.amount || 0).toFixed(2)}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </View>
   );
 }

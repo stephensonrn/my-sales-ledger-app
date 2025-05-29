@@ -13,15 +13,15 @@ import {
   Alert,
 } from '@aws-amplify/ui-react';
 
-// Corrected imports: All from the single generated file in src/graphql/API.ts
-import { 
-    AdminListUsersDocument,
-    // Types:
-    type CognitoUser, 
-    type AdminListUsersQuery 
-} from './graphql/API'; // Path relative to AdminPage.tsx in src/
+// --- CORRECTED IMPORTS ---
+// Operation Documents from src/graphql/operations/
+import { adminListUsers } from './graphql/operations/queries'; 
 
-// Import child components
+// Types from src/graphql/API.ts
+import type { CognitoUser, AdminListUsersQuery } from './graphql/API';   
+// --- END CORRECTED IMPORTS ---
+
+// Import child components (assuming they are in the same src/ directory)
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
 import SalesLedger from './SalesLedger';
@@ -47,9 +47,8 @@ function AdminPage() {
 
     console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
-      // Ensure AdminListUsersQuery is the correct type for the response data structure
       const response = await client.graphql<AdminListUsersQuery>({ 
-        query: AdminListUsersDocument,
+        query: adminListUsers, // Use the imported document
         variables: {
           limit: USERS_PER_PAGE,
           nextToken: token
@@ -172,7 +171,11 @@ function AdminPage() {
               
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
-                <AddCashReceiptForm selectedTargetSub={selectedUser.sub} />
+                <AddCashReceiptForm 
+                  selectedTargetSub={selectedUser.sub} 
+                  // Optional: Add a callback if AdminPage needs to react to cash receipt addition
+                  // onCashReceiptAdded={() => fetchUsers()} // Example: Refresh user list or other data
+                />
               </Card>
 
               <Card variation="elevated" marginTop="medium">

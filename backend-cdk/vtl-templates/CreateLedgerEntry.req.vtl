@@ -1,0 +1,60 @@
+## VTL Request Template for Mutation.createLedgerEntry
+## Allows an authenticated user to create a ledger entry for themselves.
+## The 'owner' is automatically set to the caller's identity sub.
+
+#set( $input = $context.args.input )
+
+## Validate required input fields from CreateLedgerEntryInput
+#if( $util.isNullOrBlank($input.type) )
+  $util.error("input.type is required for the ledger entry.", "ValidationException")
+#end
+#if( $util.isNull($input.amount) ) ## Amount can be 0, so we check for null, not isNullOrBlank
+  $util.error("input.amount is required for the ledger entry.", "ValidationException")
+#end
+
+## Prepare the item to be put into DynamoDB
+#set( $itemId = $util.autoId() )
+#set( $now = $util.time.nowISO8601() )
+#set( $ownerId = $context.identity.sub ) ## Owner is the logged-in user
+
+#if( $util.isNullOrBlank($ownerId) )
+  $util.error("User identity (sub) is missing. Cannot determine owner.", "AuthenticationError")
+#end
+
+#set( $itemToCreate = {
+    "id": $itemId,
+    "owner": $ownerId,
+    "type": $input.type,
+    "amount": $input.amount,
+    "createdAt": $now,
+    "updatedAt": $now
+    ## Note: 'createdByAdmin' field is intentionally NOT set here,
+    ## as this mutation is for self-service. It will be null or absent
+    ## in DynamoDB for entries created via this mutation.
+})
+
+## Add description only if it's provided in the input
+#if( $input.containsKey("description") )
+    $util.qr($itemToCreate.put("description", $input.description))
+#else
+    ## If you want to ensure description is explicitly null if not provided,
+    ## and your schema's 'description' field is nullable (e.g., String, not String!),
+    ## you could uncomment the next line:
+    #*
+    $util.qr($itemToCreate.put("description", null))
+    *#
+    ## Otherwise, if description is not in the input, it won't be an attribute on the DDB item.
+#end
+
+## Minimal Logging
+$util.qr($ctx.log.info("CREATE_LEDGER_REQ: User ($ownerId) creating entry. Item: $util.toJson($itemToCreate)"))
+
+## DynamoDB PutItem Operation
+{
+    "version": "2018-05-29",
+    "operation": "PutItem",
+    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
+    "condition": {
+        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
+    }
+}

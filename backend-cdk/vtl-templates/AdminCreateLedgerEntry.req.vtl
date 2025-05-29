@@ -1,51 +1,72 @@
 ## VTL Request Template for Mutation.adminCreateLedgerEntry
-## Allows an Admin to create a ledger entry for a specified targetUserId.
+## Allows an Admin (user in "Admin" group) to create a ledger entry for a specified targetUserId.
+## Incorporates recommendations for auditing and input handling.
 
 #set( $input = $context.args.input )
 
-## Validate required input fields
+## --- Input Validation ---
 #if( $util.isNullOrBlank($input.targetUserId) )
-  $util.error("input.targetUserId is required.", "ValidationException")
+  $util.error("input.targetUserId is required to specify the owner of the ledger entry.", "ValidationException")
 #end
 #if( $util.isNullOrBlank($input.type) )
-  $util.error("input.type is required.", "ValidationException")
+  $util.error("input.type is required for the ledger entry.", "ValidationException")
 #end
-#if( $util.isNull($input.amount) ) ## Amount can be 0, so just check for null
-  $util.error("input.amount is required.", "ValidationException")
+#if( $util.isNull($input.amount) ) ## Amount can be 0, so we check for null, not isNullOrBlank
+  $util.error("input.amount is required for the ledger entry.", "ValidationException")
 #end
 
-## Prepare the item to be put into DynamoDB
-#set( $item = {
-    "id": $util.autoId(),
-    "owner": $input.targetUserId,  ## Set the owner to the target user
+## --- Prepare the item to be put into DynamoDB ---
+#set( $itemId = $util.autoId() )
+#set( $now = $util.time.nowISO8601() )
+#set( $loggedInAdminSub = $context.identity.sub )
+
+#set( $itemToCreate = {
+    "id": $itemId,
+    "owner": $input.targetUserId,  ## Maps input.targetUserId to the 'owner' attribute in DynamoDB
     "type": $input.type,
     "amount": $input.amount,
-    "createdAt": $util.time.nowISO8601(),
-    "updatedAt": $util.time.nowISO8601(),
-    "createdByAdmin": $context.identity.sub ## Optional: Record which admin created this.
-                                          ## If used, ensure "createdByAdmin: String" (or ID)
-                                          ## is added to your LedgerEntry type in schema.graphql
-})
+    "createdAt": $now,
+    "updatedAt": $now,
+    "createdByAdmin": $loggedInAdminSub ## Records which admin created this entry
+} )
 
-## Add description only if it's provided (it's optional in the input type)
+## Handle optional description:
+## If 'description' is present in the input (even if null), it will be added to the item.
+## If 'description' is not part of the input, it won't be added to the item.
 #if( $input.containsKey("description") )
-    $util.qr($item.put("description", $input.description))
-#else
-    ## If you want to ensure description is explicitly null if not provided, uncomment:
-    #*
-    $util.qr($item.put("description", null))
-    *#
+    $util.qr($itemToCreate.put("description", $input.description))
 #end
 
+## --- Optional Audit Metadata (Recommendation 4) ---
+## To use these, add the corresponding fields to your LedgerEntry type in schema.graphql:
+##   createdByIp: AWSIPAddress  (or String)
+##   adminGroups: [String]    (or AWSJSON for the raw array)
+
+#if($context.identity.sourceIp && $context.identity.sourceIp.size() > 0)
+    $util.qr($itemToCreate.put("createdByIp", $context.identity.sourceIp[0]))
+#end
+#if($context.identity.groups && !$context.identity.groups.isEmpty())
+    $util.qr($itemToCreate.put("adminGroups", $util.toJson($context.identity.groups))) ## Stores as a JSON string array
+#end
+
+
+## --- Logging (Recommendation 5 - keeping it simple for now) ---
+## For more advanced conditional logging (e.g., only in dev):
+## You could pass a 'debug: true' argument in your GraphQL mutation input,
+## and then wrap logs with: #if( $input.debug == true ) $util.log.info(...) #end
+## Or, manage different VTL versions for dev/prod.
+## The current logs will always execute.
+$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Logged-in admin: $loggedInAdminSub"))
+$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Target owner for new entry: $input.targetUserId"))
+$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
+
+
+## --- DynamoDB PutItem Operation ---
 {
     "version": "2018-05-29",
     "operation": "PutItem",
-    ## The "key" field is not strictly necessary for PutItem if the primary key ("id")
-    ## is included in the "attributeValues" map, which $util.dynamodb.toMapValues($item) does.
-    "attributeValues": $util.dynamodb.toMapValues($item),
+    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
     "condition": {
-        ## This condition ensures you don't accidentally overwrite an existing item
-        ## if the auto-generated ID somehow collides (extremely unlikely).
-        "expression": "attribute_not_exists(id)"
+        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
     }
 }

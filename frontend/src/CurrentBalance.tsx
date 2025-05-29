@@ -9,9 +9,9 @@ interface CurrentBalanceProps {
 
 function CurrentBalance({ balance, title = "Current Sales Ledger Balance" }: CurrentBalanceProps) {
   return (
-    <Card variation="outlined" padding="medium" marginBottom="medium">
-      <Heading level={5}>{title}</Heading>
-      <Text fontSize="xl" fontWeight="bold" color={balance >= 0 ? 'font.success' : 'font.error'}>
+    <Card variation="elevated" padding="medium" marginBottom="medium">
+      <Heading level={4} color="font.secondary">{title}</Heading>
+      <Text fontSize="xxl" fontWeight="bold" color={balance >= 0 ? 'green.80' : 'red.80'}>
         £{balance.toFixed(2)}
       </Text>
     </Card>
