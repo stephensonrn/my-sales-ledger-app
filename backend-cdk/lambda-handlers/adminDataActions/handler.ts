@@ -6,6 +6,7 @@ import { ulid } from "ulid"; // For generating unique IDs
 const DDB_TABLE_TRANSACTIONS = process.env.CURRENT_ACCT_TABLE_NAME;
 const DDB_TABLE_ACCOUNT_STATUS = process.env.ACCOUNT_STATUS_TABLE_NAME;
 const AWS_REGION = process.env.AWS_REGION || "eu-west-1"; // Fallback region if not set
+const ADMIN_GROUP_NAME = process.env.ADMIN_GROUP_NAME || "Admin";
 
 if (!DDB_TABLE_TRANSACTIONS || !DDB_TABLE_ACCOUNT_STATUS) {
   throw new Error(
@@ -49,19 +50,70 @@ interface AppSyncEvent {
   };
 }
 
-export const handler = async (event: AppSyncEvent): Promise<any> => {
-  console.log(
-    "AdminDataActionsFunction event:",
-    JSON.stringify(event, null, 2)
-  );
+type CurrentAccountTransactionType =
+  | "CASH_RECEIPT"
+  | "PAYMENT_REQUEST"
+  // add other types if needed
+  ;
 
-  // Optional: Double-check admin authorization if not solely relying on AppSync @auth directive
-  // if (!event.identity?.groups?.includes("Admin")) {
-  //   console.error("Unauthorized: Caller is not in Admin group based on event.identity.groups.");
-  //   throw new Error("Unauthorized"); // This will result in a GraphQL error
-  // }
+interface CurrentAccountTransaction {
+  id: string;
+  owner: string;
+  type: CurrentAccountTransactionType;
+  amount: number;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByAdmin?: string;
+  __typename: string;
+}
 
+interface AccountStatus {
+  id: string;
+  owner: string;
+  totalUnapprovedInvoiceValue: number;
+  createdAt: string;
+  updatedAt: string;
+  createdByAdmin?: string;
+  __typename: string;
+}
+
+// Helper: check if caller is admin
+function isAdmin(groups: string[] | null | undefined): boolean {
+  return !!groups?.includes(ADMIN_GROUP_NAME);
+}
+
+// Helper: create a CurrentAccountTransaction object
+function createTransaction(
+  owner: string,
+  type: CurrentAccountTransactionType,
+  amount: number,
+  description: string | null,
+  adminSub?: string
+): CurrentAccountTransaction {
   const now = new Date().toISOString();
+  return {
+    id: ulid(),
+    owner,
+    type,
+    amount,
+    description,
+    createdAt: now,
+    updatedAt: now,
+    createdByAdmin: adminSub,
+    __typename: "CurrentAccountTransaction",
+  };
+}
+
+export const handler = async (event: AppSyncEvent): Promise<any> => {
+  console.log("AdminDataActionsFunction event:", JSON.stringify(event, null, 2));
+
+  // Enforce Admin group membership here if desired
+  if (!isAdmin(event.identity?.groups)) {
+    console.error("Unauthorized: Caller is not in Admin group.");
+    throw new Error("Unauthorized");
+  }
+
   const adminSub = event.identity?.sub; // ID of the admin performing the action
 
   switch (event.info.fieldName) {
@@ -75,17 +127,13 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
         );
       }
 
-      const newTransaction = {
-        id: ulid(),
-        owner: targetOwnerId,
-        type: "CASH_RECEIPT", // From CurrentAccountTransactionType enum
-        amount: amount,
-        description: description || null,
-        createdAt: now,
-        updatedAt: now,
-        createdByAdmin: adminSub, // Optional: track which admin
-        __typename: "CurrentAccountTransaction", // Helps AppSync map the response
-      };
+      const newTransaction = createTransaction(
+        targetOwnerId,
+        "CASH_RECEIPT",
+        amount,
+        description || null,
+        adminSub
+      );
 
       try {
         await ddbDocClient.send(
@@ -96,7 +144,7 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
           })
         );
         console.log("Successfully added cash receipt:", newTransaction);
-        return newTransaction; // Return the created CurrentAccountTransaction object
+        return newTransaction;
       } catch (error: any) {
         console.error("Error adding cash receipt to DynamoDB:", error);
         throw new Error(`Failed to add cash receipt: ${error.message}`);
@@ -115,14 +163,15 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
         );
       }
 
-      const newAccountStatus = {
-        id: ownerId, // AccountStatus ID is the owner's ID (sub)
+      const now = new Date().toISOString();
+      const newAccountStatus: AccountStatus = {
+        id: ownerId,
         owner: ownerId,
         totalUnapprovedInvoiceValue: initialUnapprovedInvoiceValue,
         createdAt: now,
         updatedAt: now,
-        createdByAdmin: adminSub, // Optional: track which admin
-        __typename: "AccountStatus", // Helps AppSync map the response
+        createdByAdmin: adminSub,
+        __typename: "AccountStatus",
       };
 
       try {
@@ -130,22 +179,13 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
           new PutCommand({
             TableName: DDB_TABLE_ACCOUNT_STATUS,
             Item: newAccountStatus,
-            // No ConditionExpression means it will create or overwrite
           })
         );
-        console.log(
-          "Successfully created/updated account status:",
-          newAccountStatus
-        );
-        return newAccountStatus; // Return the created/updated AccountStatus object
+        console.log("Successfully created/updated account status:", newAccountStatus);
+        return newAccountStatus;
       } catch (error: any) {
-        console.error(
-          "Error creating/updating account status in DynamoDB:",
-          error
-        );
-        throw new Error(
-          `Failed to create/update account status: ${error.message}`
-        );
+        console.error("Error creating/updating account status in DynamoDB:", error);
+        throw new Error(`Failed to create/update account status: ${error.message}`);
       }
     }
 
@@ -164,33 +204,17 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
         );
       }
 
-      const { targetUserId: paymentTargetUser, amount: paymentAmount } =
-        paymentInput;
+      const { targetUserId: paymentTargetUser, amount: paymentAmount } = paymentInput;
 
-      // TODO: Implement your actual payment request logic.
-      // This might involve:
-      // 1. Checking target user's available funds (may require DynamoDB Get/Query on AccountStatus or Transactions).
-      //    (Ensure this Lambda has read permissions if so).
-      // 2. Creating a 'PAYMENT_REQUEST' transaction in DDB_TABLE_TRANSACTIONS.
-      // 3. Sending an email notification via SES (Lambda would need SES permissions).
-      // 4. Integrating with a payment gateway if applicable.
+      // TODO: Add your payment gateway / SES email notification logic here.
 
-      console.log(
-        `Admin (${adminSub}) initiating payment request of ${paymentAmount} for user ${paymentTargetUser}. (Placeholder logic)`
+      const paymentRequestTransaction = createTransaction(
+        paymentTargetUser,
+        "PAYMENT_REQUEST",
+        paymentAmount,
+        `Admin-initiated payment request by ${adminSub}`,
+        adminSub
       );
-      
-      // Example of creating a PAYMENT_REQUEST transaction:
-      const paymentRequestTransaction = {
-        id: ulid(),
-        owner: paymentTargetUser,
-        type: "PAYMENT_REQUEST", // From CurrentAccountTransactionType enum
-        amount: paymentAmount,
-        description: `Admin-initiated payment request by ${adminSub}`,
-        createdAt: now,
-        updatedAt: now,
-        createdByAdmin: adminSub,
-        __typename: "CurrentAccountTransaction"
-      };
 
       try {
         await ddbDocClient.send(
@@ -200,13 +224,14 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
           })
         );
         console.log("PAYMENT_REQUEST transaction created:", paymentRequestTransaction);
-        // Your GraphQL schema for adminRequestPaymentForUser returns String.
-        // If you want to return the transaction object, you'd change the schema.
-        return `Admin successfully initiated payment request for ${paymentAmount} for user ${paymentTargetUser}. Transaction ID: ${paymentRequestTransaction.id}`;
+
+        // Returning object instead of string for consistency
+        return {
+          message: `Admin successfully initiated payment request for ${paymentAmount} for user ${paymentTargetUser}.`,
+          transactionId: paymentRequestTransaction.id,
+        };
       } catch (dbError: any) {
         console.error("Error creating PAYMENT_REQUEST transaction:", dbError);
-        // Even if transaction logging fails, the "request" might have other steps.
-        // Decide how to handle partial failures.
         throw new Error(`Failed to log payment request transaction: ${dbError.message}`);
       }
     }

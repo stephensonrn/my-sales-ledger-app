@@ -1,118 +1,88 @@
-// lambda-handlers/adminListUsers/handler.ts
+import {
+  AppSyncResolverEvent,
+  AppSyncIdentityCognito,
+} from "aws-lambda";
 
-import { CognitoIdentityProviderClient, ListUsersCommand, ListUsersCommandInput, UserType, AttributeType } from "@aws-sdk/client-cognito-identity-provider";
-import type { AppSyncResolverEvent } from 'aws-lambda'; // Use AppSync specific event type
+import {
+  CognitoUserGraphQL,
+  UserStatusType,
+  UserAttributeGraphQL,
+} from "../../types";
 
-// Define the expected shape of the arguments coming from AppSync
-interface AdminListUsersArgs {
-    limit?: number | null;      // GraphQL Int maps to number | null
-    nextToken?: string | null; // GraphQL String maps to string | null
+import { isAdmin } from "../../utils/auth"; // Your admin check function
+
+interface ListUsersResponse {
+  Users?: Array<{
+    Username?: string;
+    Attributes?: { Name?: string; Value?: string }[];
+    UserStatus?: string;
+    Enabled?: boolean;
+    UserCreateDate?: Date;
+    UserLastModifiedDate?: Date;
+  } | null>;
 }
-
-// Define the structure for the attributes array we return via GraphQL
-interface UserAttributeGraphQL {
-  name: string;
-  value?: string | null; // Value can be null or undefined
-}
-
-// Define the structure for the user object we return via GraphQL
-interface CognitoUserGraphQL {
-  username: string;
-  sub: string;
-  status?: string | null;
-  enabled?: boolean | null;
-  createdAt?: string | null; // AWSDateTime maps to string (ISO 8601)
-  updatedAt?: string | null; // AWSDateTime maps to string (ISO 8601)
-  attributes?: UserAttributeGraphQL[] | null; // Make list potentially null
-}
-
-// Define the final result structure matching the GraphQL schema
-interface UserListResultGraphQL {
-  users: CognitoUserGraphQL[] | null; // List can be null if error or empty
-  nextToken?: string | null;
-}
-
-const client = new CognitoIdentityProviderClient({}); // Client automatically uses region from Lambda environment
-const userPoolId = process.env.USER_POOL_ID; // Get User Pool ID from environment variables set by CDK
 
 export const handler = async (
-  event: AppSyncResolverEvent<AdminListUsersArgs>
-): Promise<UserListResultGraphQL> => { // Return type matching GraphQL schema
+  event: AppSyncResolverEvent<any>
+): Promise<CognitoUserGraphQL[]> => {
+  // Narrow identity to Cognito to safely access groups
+  const cognitoIdentity = event.identity as AppSyncIdentityCognito | undefined;
 
-  console.log(`Received event arguments: ${JSON.stringify(event.arguments)}`);
-
-  if (!userPoolId) {
-      console.error("FATAL: USER_POOL_ID environment variable not set.");
-      // Throw an error that AppSync can report back to the client
-      throw new Error("Internal configuration error. Please contact support.");
+  if (!cognitoIdentity?.groups || !isAdmin(cognitoIdentity.groups)) {
+    throw new Error("Unauthorized: Admin access required");
   }
 
-  // Use arguments passed from the AppSync query, provide defaults
-  const limit = event.arguments.limit ?? 25;
-  const paginationToken = event.arguments.nextToken ?? undefined; // Use undefined if null/not present
+  // Simulated response - replace with your actual AWS Cognito SDK call
+  const response: ListUsersResponse = await fakeListUsers();
 
-  // Define which attributes we want Cognito to return for each user
-// --- MODIFICATION START ---
-    const params: ListUsersCommandInput = {
-        UserPoolId: userPoolId,
-        Limit: limit,
-        PaginationToken: paginationToken,
-        // AttributesToGet: [...] // REMOVE OR COMMENT OUT THIS LINE
-    };
-    // --- MODIFICATION END ---
-  // Note: 'enabled' and 'UserStatus' are properties of the UserType, not in the Attributes array usually.
-  console.log("Calling Cognito ListUsers with params:", JSON.stringify(params));
+  const usersGraphQL: CognitoUserGraphQL[] = (response.Users || [])
+    .map((user): CognitoUserGraphQL | null => {
+      if (!user || !user.Username || !user.Attributes) return null;
 
-  try {
-      const command = new ListUsersCommand(params);
-      const response = await client.send(command);
-
-      console.log(`Cognito ListUsers successful. Found ${response.Users?.length ?? 0} users.`);
-
-      // Map the Cognito UserType[] to our GraphQL CognitoUserGraphQL[]
-      const usersGraphQL: CognitoUserGraphQL[] = (response.Users || []).map((cognitoUser: UserType) => {
-
-            // Helper to extract a specific attribute value
-            const getAttrValue = (name: string): string | undefined => {
-                return cognitoUser.Attributes?.find(attr => attr.Name === name)?.Value;
-            };
-
-            const sub = getAttrValue("sub");
-
-            // Basic check - skip user if 'sub' wasn't returned for some reason
-            if (!sub) {
-                console.warn(`Skipping user ${cognitoUser.Username} because 'sub' attribute was missing.`);
-                return null; // Will be filtered out later
-            }
-
-            // Map all Cognito attributes to the GraphQL structure
-            const mappedAttributes: UserAttributeGraphQL[] = (cognitoUser.Attributes || [])
-                .filter(attr => attr.Name !== undefined) // Ensure Name exists
-                .map((attr: AttributeType) => ({
-                    name: attr.Name!, // Use non-null assertion as we filtered
-                    value: attr.Value ?? null, // Pass null if value is undefined
-                }));
-
-            return {
-              username: cognitoUser.Username ?? '', // Primary Cognito identifier
-              sub: sub,                           // The unique immutable ID
-              status: cognitoUser.UserStatus ?? null,
-              enabled: cognitoUser.Enabled ?? null,
-              createdAt: cognitoUser.UserCreateDate?.toISOString() ?? null,
-              updatedAt: cognitoUser.UserLastModifiedDate?.toISOString() ?? null,
-              attributes: mappedAttributes,
-            };
-      }).filter(user => user !== null) as CognitoUserGraphQL[]; // Filter out any nulls from mapping issues
-
-      // Return the result matching the GraphQL UserListResult type
       return {
-          users: usersGraphQL,
-          nextToken: response.PaginationToken ?? null // Return null if no more pages
+        username: user.Username,
+        sub: user.Attributes.find((a) => a.Name === "sub")?.Value ?? "",
+        status: (user.UserStatus as UserStatusType) ?? null,
+        enabled: user.Enabled ?? null,
+        createdAt: user.UserCreateDate?.toISOString() ?? null,
+        updatedAt: user.UserLastModifiedDate?.toISOString() ?? null,
+        attributes: user.Attributes
+          .filter((attr) => attr.Name !== undefined)
+          .map((attr) => ({
+            name: attr.Name!, // Non-null assertion is safe after filter
+            value: attr.Value ?? "",
+          })),
       };
+    })
+    .filter((u): u is CognitoUserGraphQL => u !== null); // Type guard to exclude nulls
 
-  } catch (error: any) { // Catch errors during the Cognito API call
-      console.error("Error calling Cognito ListUsers API:", error);
-      // Throw an error that AppSync can report back
-      throw new Error(`Failed to list users from Cognito: ${error.message}`);
-  }
+  return usersGraphQL;
 };
+
+// Dummy function to mimic AWS Cognito call
+async function fakeListUsers(): Promise<ListUsersResponse> {
+  return {
+    Users: [
+      {
+        Username: "user1",
+        UserStatus: "CONFIRMED",
+        Enabled: true,
+        UserCreateDate: new Date(),
+        UserLastModifiedDate: new Date(),
+        Attributes: [
+          { Name: "sub", Value: "abc123" },
+          { Name: "email", Value: "user1@example.com" },
+        ],
+      },
+      null,
+      {
+        Username: "user2",
+        UserStatus: "UNCONFIRMED",
+        Enabled: false,
+        UserCreateDate: new Date(),
+        UserLastModifiedDate: new Date(),
+        Attributes: [{ Name: "sub", Value: "def456" }],
+      },
+    ],
+  };
+}
