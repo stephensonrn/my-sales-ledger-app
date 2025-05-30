@@ -1,37 +1,38 @@
-## REQ_VTL_STATUS_FIX_V9_MAY29_2255 ## NEW UNIQUE MARKER
+## REQ_VTL_STATUS_FIX_V10_MAY30_NO_INLINE_END_COMMENT ## NEW UNIQUE MARKER
+## REQ_VTL_STATUS 1541 30 May ## NEW UNIQUE MARKER
 
 #set( $limit = $util.defaultIfNull($context.args.limit, 1) )
 #set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
 #set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
 #if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
-    $util.qr($ctx.log.info("STATUS_REQ_VTL_A8: Falling back to context.identity.sub for ownerIdToQuery"))
+    #set( $logMsgFallback = "STATUS_REQ_VTL_V10: Fallback to context.identity.sub for ownerIdToQuery: " + $context.identity.sub )
+    $util.qr($ctx.log.info($logMsgFallback))
     #set( $ownerIdToQuery = $context.identity.sub )
 #end
 
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
-    #set( $logMsg = "STATUS_REQ_VTL_A8: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
-    $util.qr($ctx.log.info($logMsg))
+    #set( $logMsgAdmin = "STATUS_REQ_VTL_V10: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
+    $util.qr($ctx.log.info($logMsgAdmin))
     #set( $ownerIdToQuery = $context.args.filter.owner.eq )
   #else
-    #set( $logMsg = "STATUS_REQ_VTL_A8: Admin call, no owner filter. Defaulting to admin's own ID from claims: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($logMsg))
+    #set( $logMsgAdminDefault = "STATUS_REQ_VTL_V10: Admin call, no owner filter. Defaulting to admin's own ID: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($logMsgAdminDefault))
   #end
 #else
-    #set( $logMsg = "STATUS_REQ_VTL_A8: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($logMsg))
+    #set( $logMsgNonAdmin = "STATUS_REQ_VTL_V10: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($logMsgNonAdmin))
 #end
 
-## Log the resolved ownerIdToQuery safely
-#set( $logOwnerId = "null" )
+#set( $logResolvedOwnerId = "null_or_empty" )
 #if( !$util.isNullOrBlank($ownerIdToQuery) )
-  #set( $logOwnerId = $ownerIdToQuery )
+  #set( $logResolvedOwnerId = $ownerIdToQuery )
 #end
-$util.qr($ctx.log.info("STATUS_REQ_VTL_A8: Resolved ownerIdToQuery before validation = ${logOwnerId}")) ## Using VTL interpolation for safety
+$util.qr($ctx.log.info("STATUS_REQ_VTL_V10: Resolved ownerIdToQuery before validation = ${logResolvedOwnerId}"))
 
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
-  $util.error("Owner ID for query is null or empty.", "InvalidRequestException")
+  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated or admin provides a filter.", "InvalidRequestException")
 #end
 
 {
@@ -48,5 +49,7 @@ $util.qr($ctx.log.info("STATUS_REQ_VTL_A8: Resolved ownerIdToQuery before valida
     }
   },
   "limit": $limit
-  #if( $nextToken ), "nextToken": "$nextToken" #end
+  #if( $nextToken )
+  ,"nextToken": "$nextToken"
+  #end
 }

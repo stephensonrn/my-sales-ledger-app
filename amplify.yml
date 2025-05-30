@@ -1,14 +1,12 @@
-# amplify.yml
 version: 1
 frontend:
   phases:
     preBuild:
       commands:
-        # You can add Node version management here later to address the EBADENGINE warnings
-        # Example:
-        # - nvm install 20 && nvm use 20
+        - nvm install 20
+        - nvm use 20
         - cd frontend
-        - npm install  # <--- CHANGED FROM 'npm ci'
+        - npm ci
     build:
       commands:
         - npm run build
@@ -19,3 +17,4 @@ frontend:
   cache:
     paths:
       - frontend/node_modules/**/*
+      - ~/.npm

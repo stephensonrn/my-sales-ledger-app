@@ -15,6 +15,9 @@ import './App.css';
 // Logo
 import aurumLogo from '/Aurum.png';
 
+// src/index.tsx
+import './aws-config'; // Add this line
+
 // --- Authenticator Customization Objects (Keep as is) ---
 const formFields = {
   signIn: {

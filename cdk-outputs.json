@@ -1,0 +1,17 @@
+{
+  "SalesLedgerApp-Backend-eu-west-1": {
+    "AccountStatusTableNameOutput": "AccountStatus-SalesLedgerApp-Backend-eu-west-1",
+    "GraphQLAPIIDOutput": "mglrg2nkw5dereoh7q3cyuv65m",
+    "AdminListUsersFunctionNameOutput": "adminListUsersFunction-SalesLedgerApp-Backend-eu-west-1",
+    "RegionOutput": "eu-west-1",
+    "TransactionTableNameOutput": "Transaction-SalesLedgerApp-Backend-eu-west-1",
+    "LedgerEntryTableNameOutput": "LedgerEntry-SalesLedgerApp-Backend-eu-west-1",
+    "UserPoolIdOutput": "eu-west-1_jIa2hOCaZ",
+    "UserPoolClientIdOutput": "3br2lv10rbfjt4v12j3lonemfm",
+    "GraphQLAPIURLOutput": "https://yik7x25zqne6jnnzvymp5c3c7m.appsync-api.eu-west-1.amazonaws.com/graphql",
+    "MonthlyReportMailerFunctionArnOutput": "arn:aws:lambda:eu-west-1:277707134311:function:monthlyReportMailerFunction-SalesLedgerApp-Backend-eu-west-1",
+    "SendPaymentRequestFunctionNameOutput": "sendPaymentRequestFunction-SalesLedgerApp-Backend-eu-west-1",
+    "AdminDataActionsFunctionNameOutput": "adminDataActionsFunction-SalesLedgerApp-Backend-eu-west-1",
+    "MonthlyReportMailerFunctionNameOutput": "monthlyReportMailerFunction-SalesLedgerApp-Backend-eu-west-1"
+  }
+}

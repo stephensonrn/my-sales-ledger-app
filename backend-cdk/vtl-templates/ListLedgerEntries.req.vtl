@@ -1,64 +1,79 @@
 ## VTL Request Template for Query.listLedgerEntries
-## Fetches ledger entries.
-## - Non-admins see their own entries.
-## - Admins can see entries for the owner specified in args.filter.owner.eq.
-## - Includes simplified filter expression handling.
+## ATTEMPT_MAY30_LEDGER_FIX - Uses claims.sub and safer logging
 
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
+#set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
-## Determine the owner for the DynamoDB query
-#set( $ownerIdToQuery = $context.identity.sub )
+## --- Determine the owner ID to query ---
+#set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
+#if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
+    $util.qr($ctx.log.info("LEDGER_REQ_VTL: Falling back to context.identity.sub for ownerIdToQuery"))
+    #set( $ownerIdToQuery = $context.identity.sub )
+#end
+
+## --- Admin Override Logic ---
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
+    #set( $adminLogMsg = "LEDGER_REQ_VTL: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
+    $util.qr($ctx.log.info($adminLogMsg))
     #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+  #else
+    #set( $adminLogMsg = "LEDGER_REQ_VTL: Admin call, no owner filter. Defaulting to admin's own ID from claims: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($adminLogMsg))
   #end
+#else
+    #set( $nonAdminLogMsg = "LEDGER_REQ_VTL: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
+    $util.qr($ctx.log.info($nonAdminLogMsg))
 #end
 
+## --- Log the resolved ownerIdToQuery safely ---
+#set( $logResolvedOwnerId = "null_or_empty" )
+#if( !$util.isNullOrBlank($ownerIdToQuery) )
+  #set( $logResolvedOwnerId = $ownerIdToQuery )
+#end
+$util.qr($ctx.log.info("LEDGER_REQ_VTL: Resolved ownerIdToQuery before validation = ${logResolvedOwnerId}"))
+
+## --- Ensure ownerIdToQuery is not null or empty ---
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
-  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated.", "InvalidRequestException")
+  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated or admin provides a filter.", "InvalidRequestException")
 #end
 
-## Expression attributes setup
-#set( $expressionNames = {} )
-#set( $expressionValues = {} )
-$util.qr($expressionNames.put("#ownerAttribute", "owner"))
-$util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerIdToQuery)))
+## --- Initialize Expression Attributes ---
+#set( $expressionNames = { "#ownerAttribute": "owner" } )
+#set( $expressionValues = { ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery) } )
 #set( $keyConditionExpression = "#ownerAttribute = :ownerValue" )
 
-## Logging
-$util.qr($ctx.log.info("LEDGER_VTL_REQ: Effective Owner for Query: $ownerIdToQuery"))
-
-## Build base query object
+## --- Build base query object ---
 #set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner",
+  "index": "byOwner", ## Assumes GSI on LedgerEntryTable is named 'byOwner'
   "query": {
     "expression": $keyConditionExpression,
     "expressionNames": $expressionNames,
     "expressionValues": $expressionValues
   },
   "limit": $limit,
-  "scanIndexForward": false
+  "scanIndexForward": false ## To get newest entries first if 'createdAt' is sort key on GSI
 })
 
-## Handle pagination
-#if( $context.args.nextToken && !$util.isNullOrBlank($context.args.nextToken) )
-  $util.qr($queryObj.put("nextToken", $context.args.nextToken))
+## --- Handle pagination ---
+#if( $nextToken )
+  $util.qr($queryObj.put("nextToken", $nextToken))
 #end
 
-## Optional filters
+## --- Optional filters ---
 #if( $context.args.filter )
   #set( $filterExpressionParts = [] )
 
-  ## Filter by type
+  ## Filter by type (example)
   #if( $context.args.filter.type && $context.args.filter.type.eq && !$util.isNullOrBlank($context.args.filter.type.eq) )
-    $util.qr($filterExpressionParts.add("#filterLedgerEntryType = :filterLedgerEntryType"))
+    $util.qr($filterExpressionParts.add("#filterLedgerEntryType = :filterLedgerEntryTypeValue"))
     $util.qr($expressionNames.put("#filterLedgerEntryType", "type")) 
-    $util.qr($expressionValues.put(":filterLedgerEntryType", $util.dynamodb.toDynamoDB($context.args.filter.type.eq)))
+    $util.qr($expressionValues.put(":filterLedgerEntryTypeValue", $util.dynamodb.toDynamoDB($context.args.filter.type.eq)))
   #end
 
-  ## Filter by createdAt range
+  ## Filter by createdAt range (example, using ModelStringFilterInput's 'between')
   #if( $context.args.filter.createdAt && $context.args.filter.createdAt.between && $context.args.filter.createdAt.between.size() == 2 )
     $util.qr($filterExpressionParts.add("#filterCreatedAt BETWEEN :startRange AND :endRange"))
     $util.qr($expressionNames.put("#filterCreatedAt", "createdAt"))
@@ -66,14 +81,19 @@ $util.qr($ctx.log.info("LEDGER_VTL_REQ: Effective Owner for Query: $ownerIdToQue
     $util.qr($expressionValues.put(":endRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[1])))
   #end
 
-  ## Attach the combined filter expression
+  ## Add other filter conditions here using the same pattern...
+
+  ## Attach the combined filter expression if any parts were added
   #if( !$filterExpressionParts.isEmpty() )
     $util.qr($queryObj.put("filter", {
       "expression": $util.listJoin(" AND ", $filterExpressionParts)
+      ## expressionNames and expressionValues for the filter are already part of the main maps
     }))
   #end
 #end
 
-## Final logging
-$util.qr($ctx.log.info("LEDGER_VTL_REQ: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+## --- Final logging and return ---
+#set( $finalQueryLog = $util.toJson($queryObj) )
+$util.qr($ctx.log.info("LEDGER_REQ_VTL: Final DynamoDB Query Object: ${finalQueryLog}"))
+
 $util.toJson($queryObj)

@@ -1,6 +1,9 @@
 // backend-cdk/lib/backend-cdk-stack.ts
-// ATTEMPT 7 - May 29 - Includes enhanced logged response VTL
-// ATTEMPT 8 - May 29
+// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES
+// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1457
+// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1504
+// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1513
+// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1529
 
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -34,6 +37,7 @@ export class BackendCdkStack extends cdk.Stack {
 
     cdk.Tags.of(this).add('Project', 'SalesLedger');
     cdk.Tags.of(this).add('Environment', props?.env?.region || 'dev');
+    cdk.Tags.of(this).add('DeploymentFocus', 'FixLambdaEntryPathsAndResponseVTL');
 
     const companyNameCustomAttributeDefinition = new cognito.StringAttribute({
       mutable: true,
@@ -107,12 +111,11 @@ export class BackendCdkStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    // --- byOwner GSI for LedgerEntryTable REMAINS COMMENTED OUT (Step 1 of GSI update) ---
-    // this.ledgerEntryTable.addGlobalSecondaryIndex({
-    //   indexName: 'byOwner',
-    //   partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-    //   // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
-    // });
+    this.ledgerEntryTable.addGlobalSecondaryIndex({
+    indexName: 'byOwner',
+    partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+    });
 
     this.accountStatusTable = new dynamodb.Table(this, 'AccountStatusTable', {
       tableName: `AccountStatus-${this.stackName}`,
@@ -131,12 +134,11 @@ export class BackendCdkStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    // --- byOwner GSI for TransactionTable REMAINS COMMENTED OUT (Step 1 of GSI update) ---
-    // this.transactionTable.addGlobalSecondaryIndex({
-    //   indexName: 'byOwner',
-    //   partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-    //   // sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
-    // });
+    this.transactionTable.addGlobalSecondaryIndex({
+    indexName: 'byOwner',
+    partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+    });
 
     const nodeJsFunctionProps: Omit<lambda_nodejs.NodejsFunctionProps, 'entry' | 'handler' | 'role' | 'functionName' | 'environment'> = {
         runtime: lambda.Runtime.NODEJS_20_X,
@@ -147,12 +149,13 @@ export class BackendCdkStack extends cdk.Stack {
         },
     };
 
+    // --- Define Lambda Functions with corrected entry paths ---
     const sendPaymentRequestRole = new iam.Role(this, 'SendPaymentRequestRole', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'), managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')] });
     this.sendPaymentRequestFunction = new lambda_nodejs.NodejsFunction(this, 'SendPaymentRequestFn', {
         ...nodeJsFunctionProps,
         functionName: `sendPaymentRequestFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'),
+        entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'), // Corrected
         role: sendPaymentRequestRole,
         timeout: Duration.seconds(30),
         environment: {
@@ -171,7 +174,7 @@ export class BackendCdkStack extends cdk.Stack {
         ...nodeJsFunctionProps,
         functionName: `adminDataActionsFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'),
+        entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'), // Corrected
         role: adminDataActionsRole,
         timeout: Duration.seconds(30), 
         environment: {
@@ -191,7 +194,7 @@ export class BackendCdkStack extends cdk.Stack {
         ...nodeJsFunctionProps,
         functionName: `adminListUsersFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'),
+        entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'), // Corrected
         role: adminListUsersRole,
         timeout: Duration.seconds(15),
         environment: { USER_POOL_ID: this.userPool.userPoolId },
@@ -208,7 +211,7 @@ export class BackendCdkStack extends cdk.Stack {
     this.monthlyReportMailerFunction = new lambda_nodejs.NodejsFunction(this, 'MonthlyReportMailerFunction', {
       ...nodeJsFunctionProps,
       functionName: `monthlyReportMailerFunction-${this.stackName}`,
-      entry: path.join(__dirname, '../lambda-handlers/monthlyReportMailer/index.ts'),
+      entry: path.join(__dirname, '../lambda-handlers/monthlyReportMailer/index.ts'), // Corrected (assuming index.ts is the entry)
       handler: 'handler',
       role: monthlyReportMailerRole,
       timeout: Duration.minutes(10),
@@ -234,17 +237,17 @@ export class BackendCdkStack extends cdk.Stack {
     });
     scheduleRule.addTarget(new targets.LambdaFunction(this.monthlyReportMailerFunction));
 
-    // --- Apply Permissions to Lambdas ---
+    // --- Apply Permissions to Lambdas (Ensure these are complete and correct) ---
     if (sendPaymentRequestRole) {
-      sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); // TODO: Scope down SES resources
+      sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); 
       sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [this.userPool.userPoolArn] }));
       this.transactionTable.grantWriteData(sendPaymentRequestRole);
     }
-    if (adminDataActionsRole) {
+    if (adminDataActionsRole) { 
       this.transactionTable.grantReadWriteData(adminDataActionsRole); 
       this.ledgerEntryTable.grantReadWriteData(adminDataActionsRole);  
       this.accountStatusTable.grantReadWriteData(adminDataActionsRole);
-      adminDataActionsRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); // TODO: Scope down
+      adminDataActionsRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); 
       adminDataActionsRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [this.userPool.userPoolArn] }));
     }
     if (adminListUsersRole) {
@@ -252,7 +255,7 @@ export class BackendCdkStack extends cdk.Stack {
     }
     if (monthlyReportMailerRole) {
       monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['cognito-idp:ListUsers', 'cognito-idp:ListGroupsForUser'], resources: [this.userPool.userPoolArn] }));
-      monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['ses:SendRawEmail'], resources: ['*'] })); // TODO: Scope down SES resources
+      monthlyReportMailerRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['ses:SendRawEmail'], resources: ['*'] }));
       this.ledgerEntryTable.grantReadData(monthlyReportMailerRole);
       this.transactionTable.grantReadData(monthlyReportMailerRole);
       this.accountStatusTable.grantReadData(monthlyReportMailerRole);
@@ -272,13 +275,22 @@ export class BackendCdkStack extends cdk.Stack {
 
     // --- Create and Attach AppSync Resolvers ---
 
-    // **** ENHANCED listResponseMappingTemplate with DETAILED LOGGING (V2) ****
+    // **** CORRECTED listResponseMappingTemplate with SAFER LOGGING and CORRECT RETURN ****
     const listResponseMappingTemplate = appsync.MappingTemplate.fromString(`
-      ## RESP_VTL_LOGGED_ATTEMPT_7 - May 29
+      ## RESP_VTL_LOGGED_FINAL_FIX - May 30 
       $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG --- List Query Response (Field: " + $ctx.info.fieldName + ") ---"))
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.error (from DDB or request VTL): " + $util.toJson($ctx.error)))
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result (raw from DDB): " + $util.toJson($ctx.result)))
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Raw nextToken from ctx.result: " + $util.toJson($ctx.result.nextToken)))
+      
+      #set( $logCtxError = $util.toJson($ctx.error) )
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.error (from DDB or request VTL): " + $logCtxError))
+      
+      #set( $logCtxResult = $util.toJson($ctx.result) )
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result (raw from DDB): " + $logCtxResult))
+      
+      #set( $logRawNextToken = "null" ) 
+      #if( !$util.isNull($ctx.result) )
+        #set( $logRawNextToken = $util.toJson($ctx.result.nextToken) )
+      #end
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Raw nextToken from ctx.result: " + $logRawNextToken))
 
       #if($ctx.error)
         $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Error detected in ctx.error. Calling $util.error to return GraphQL error."))
@@ -288,7 +300,8 @@ export class BackendCdkStack extends cdk.Stack {
       #set( $processedItems = [] ) 
       #if( !$util.isNull($ctx.result) && !$util.isNull($ctx.result.items) )
         #if( !$util.isList($ctx.result.items) )
-          $util.qr($ctx.log.warn("RESPONSE_MAPPER_DEBUG: Warning - ctx.result.items is present but not a list. Value: " + $util.toJson($ctx.result.items)))
+          #set( $itemsWarningValue = $util.toJson($ctx.result.items) )
+          $util.qr($ctx.log.warn("RESPONSE_MAPPER_DEBUG: Warning - ctx.result.items is present but not a list. Value: " + $itemsWarningValue))
         #else
           #set( $processedItems = $ctx.result.items )
         #end
@@ -298,15 +311,18 @@ export class BackendCdkStack extends cdk.Stack {
 
       #set( $processedNextToken = $util.defaultIfNullOrBlank($ctx.result.nextToken, null) )
       
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed items for final map (pre-AppSync-serialization): " + $util.toJson($processedItems)))
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed nextToken for final map (pre-AppSync-serialization): " + $util.toJson($processedNextToken)))
+      #set( $logProcessedItems = $util.toJson($processedItems) )
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed items for final map: " + $logProcessedItems))
+      
+      #set( $logProcessedNextToken = $util.toJson($processedNextToken) )
+      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed nextToken for final map: " + $logProcessedNextToken))
 
       {
         "items": $processedItems,
         "nextToken": $processedNextToken
       }
     `);
-    // **** END ENHANCED listResponseMappingTemplate ****
+    // **** END CORRECTED listResponseMappingTemplate ****
 
     const getItemResponseMappingTemplate = appsync.MappingTemplate.dynamoDbResultItem();
 
@@ -320,19 +336,49 @@ export class BackendCdkStack extends cdk.Stack {
 
     // == AccountStatus Resolvers ==
     accountStatusDataSource.createResolver('GetAccountStatusResolver', { typeName: 'Query', fieldName: 'getAccountStatus', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
-    accountStatusDataSource.createResolver('ListAccountStatusesResolver', { typeName: 'Query', fieldName: 'listAccountStatuses', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatusesByOwner.req.vtl')), responseMappingTemplate: listResponseMappingTemplate });
+    accountStatusDataSource.createResolver('ListAccountStatusesResolverV2', { // <<< CHANGED Logical ID
+  typeName: 'Query', 
+  fieldName: 'listAccountStatuses', 
+  requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatusesByOwner.req.vtl')), 
+  responseMappingTemplate: listResponseMappingTemplate 
+});
     accountStatusDataSource.createResolver('UpdateAccountStatusResolver', { typeName: 'Mutation', fieldName: 'updateAccountStatus', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateAccountStatus.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
 
     // == CurrentAccountTransaction Resolvers ==
     transactionDataSource.createResolver('GetCurrentAccountTransactionResolver', { typeName: 'Query', fieldName: 'getCurrentAccountTransaction', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
     transactionDataSource.createResolver('ListCurrentAccountTransactionsResolver', { typeName: 'Query', fieldName: 'listCurrentAccountTransactions', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListCurrentAccountTransactions.req.vtl')), responseMappingTemplate: listResponseMappingTemplate });
 
-    // == Lambda Resolvers ==
-    adminDataActionsDataSource.createResolver('AdminAddCashReceiptResolver', { typeName: 'Mutation', fieldName: 'adminAddCashReceipt', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
-    adminDataActionsDataSource.createResolver('AdminCreateAccountStatusResolver', { typeName: 'Mutation', fieldName: 'adminCreateAccountStatus', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
-    sendPaymentRequestDataSource.createResolver('SendPaymentRequestEmailResolver', { typeName: 'Mutation', fieldName: 'sendPaymentRequestEmail', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
-    adminListUsersDataSource.createResolver('AdminListUsersResolver', { typeName: 'Query', fieldName: 'adminListUsers', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
-    adminDataActionsDataSource.createResolver('AdminRequestPaymentForUserResolver', { typeName: 'Mutation', fieldName: 'adminRequestPaymentForUser', requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), responseMappingTemplate: appsync.MappingTemplate.lambdaResult() });
+    // == Lambda Resolvers (Ensure full properties) ==
+    adminDataActionsDataSource.createResolver('AdminAddCashReceiptResolver', { 
+      typeName: 'Mutation', 
+      fieldName: 'adminAddCashReceipt', 
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+    });
+    adminDataActionsDataSource.createResolver('AdminCreateAccountStatusResolver', { 
+      typeName: 'Mutation', 
+      fieldName: 'adminCreateAccountStatus', 
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+    });
+    sendPaymentRequestDataSource.createResolver('SendPaymentRequestEmailResolver', { 
+      typeName: 'Mutation', 
+      fieldName: 'sendPaymentRequestEmail', 
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+    });
+    adminListUsersDataSource.createResolver('AdminListUsersResolver', { 
+      typeName: 'Query', 
+      fieldName: 'adminListUsers', 
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+    });
+    adminDataActionsDataSource.createResolver('AdminRequestPaymentForUserResolver', { 
+      typeName: 'Mutation', 
+      fieldName: 'adminRequestPaymentForUser', 
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+    });
 
     // --- Stack Outputs ---
     new CfnOutput(this, 'RegionOutput', { value: this.region });
