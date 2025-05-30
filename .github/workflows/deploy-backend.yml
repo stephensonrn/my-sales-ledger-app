@@ -1,72 +1,48 @@
-name: Deploy Backend and Frontend
+name: Deploy Backend
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'backend-cdk/**'
+      - '.github/workflows/deploy-backend.yml'
 
 jobs:
   deploy:
+    name: Deploy CDK Backend
     runs-on: ubuntu-latest
 
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::277707134311:role/GitHubActionsDeploymentRole
+          aws-region: eu-west-1
 
-      - name: Install Node.js
-        uses: actions/setup-node@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: Install dependencies for backend
-        run: |
-          cd backend
-          npm install
+      - name: Install dependencies
+        working-directory: backend-cdk
+        run: npm ci
 
-      - name: Deploy CDK backend and save outputs
-        run: |
-          cd backend
-          npx cdk deploy --outputs-file ../cdk-outputs.json --require-approval never
+      - name: Run tests
+        working-directory: backend-cdk
+        run: npm test
 
-      - name: Generate frontend .env from CDK outputs
-        run: |
-          node scripts/generate-env-from-cdk.js
+      - name: CDK Deploy
+        working-directory: backend-cdk
+        run: npx cdk deploy --require-approval never
 
-      - name: Install dependencies for frontend
-        run: |
-          cd frontend
-          npm install
-
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
-
-      
-            - name: Install Amplify CLI
-        run: npm install -g @aws-amplify/cli
-
-      - name: Configure Amplify CLI
-        run: |
-          amplify configure project \
-            --yes \
-            --amplify "{\"envName\":\"prod\",\"defaultEditor\":\"code\"}" \
-            --frontend "{\"frontend\":\"javascript\",\"framework\":\"react\",\"config\":{\"SourceDir\":\"frontend\",\"DistributionDir\":\"frontend/build\",\"BuildCommand\":\"npm run build\",\"StartCommand\":\"npm run start\"}}" \
-            --providers "{\"awscloudformation\":{\"region\":\"${{ secrets.AWS_REGION }}\"}}"
-
-      - name: Publish frontend to Amplify Console
-        run: |
-          cd frontend
-          amplify publish --yes
- 
-
+      - name: Generate frontend .env file
+        run: node scripts/generate-env-from-cdk.js
