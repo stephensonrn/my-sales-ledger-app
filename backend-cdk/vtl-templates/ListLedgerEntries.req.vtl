@@ -1,5 +1,4 @@
 ## VTL Request Template for Query.listLedgerEntries
-## ATTEMPT_MAY30_LEDGER_FIX - Uses claims.sub and safer logging
 
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
 #set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
@@ -7,7 +6,7 @@
 ## --- Determine the owner ID to query ---
 #set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
 #if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
-    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Falling back to context.identity.sub for ownerIdToQuery"))
+    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Falling back to context.identity.sub for ownerIdToQuery: ${context.identity.sub}"))
     #set( $ownerIdToQuery = $context.identity.sub )
 #end
 
@@ -18,8 +17,6 @@
     $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Admin override. Setting ownerIdToQuery from filter: $ownerFromFilter"))
     #set( $ownerIdToQuery = $ownerFromFilter )
   #else
-    ## For admin call with no owner filter, $ownerIdToQuery (admin's own ID) will be used.
-    ## This is a design choice; if admins should query all owners without a filter, this VTL would need a different GSI or approach.
     $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Admin call, no specific owner filter provided. Querying for admin's own ID: $ownerIdToQuery"))
   #end
 #else
@@ -31,7 +28,7 @@
 #if( !$util.isNullOrBlank($ownerIdToQuery) )
   #set( $logResolvedOwnerId = $ownerIdToQuery )
 #end
-$util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Resolved ownerIdToQuery before validation = $logResolvedOwnerId")) ## Used direct substitution
+$util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Resolved ownerIdToQuery before validation = $logResolvedOwnerId"))
 
 ## --- Ensure ownerIdToQuery is not null or empty ---
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
@@ -51,12 +48,12 @@ $util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerId
 #set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Assumes GSI on LedgerEntryTable is named 'byOwner'
-  "query": { ## This object contains the KeyConditionExpression
+  "index": "byOwner",
+  "query": {
     "expression": $keyConditionExpression
   },
   "limit": $limit,
-  "scanIndexForward": false ## To get newest entries first if 'createdAt' (or other sort key) is sort key on GSI
+  "scanIndexForward": false
 })
 
 ## --- Handle pagination ---
@@ -67,6 +64,7 @@ $util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerId
 ## --- Optional filters ---
 #if( $context.args.filter )
   #set( $filterExpressionParts = [] )
+  ## $expressionNames and $expressionValues maps will be expanded here
 
   ## Filter by type (example)
   #if( $context.args.filter.type && $context.args.filter.type.eq && !$util.isNullOrBlank($context.args.filter.type.eq) )
@@ -97,16 +95,29 @@ $util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerId
   #end
 #end
 
-## Add the collected ExpressionAttributeNames and ExpressionAttributeValues to the top level of the query object
-## These apply to both the keyConditionExpression (inside "query") and the filterExpression (inside "filter")
+## Add the collected (and potentially expanded by filter) expressionNames and expressionValues
+## into the 'query' object and 'filter' object (if it exists) as AppSync expects.
 #if( !$expressionNames.isEmpty() )
-  $util.qr($queryObj.put("expressionAttributeNames", $expressionNames))
+  $util.qr($queryObj.query.put("expressionNames", $expressionNames))
+  #if( $queryObj.containsKey("filter") )
+    $util.qr($queryObj.filter.put("expressionNames", $expressionNames))
+  #end
 #end
 #if( !$expressionValues.isEmpty() )
-  $util.qr($queryObj.put("expressionAttributeValues", $expressionValues))
+  $util.qr($queryObj.query.put("expressionValues", $expressionValues))
+  #if( $queryObj.containsKey("filter") )
+    $util.qr($queryObj.filter.put("expressionValues", $expressionValues))
+  #end
 #end
 
 ## --- Final logging and return ---
+## Uncomment the lines below for detailed debugging of the generated query components
+## $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Final query expression for 'query' block = $keyConditionExpression"))
+## if( $queryObj.containsKey("filter") )
+##   $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Final filter expression = ${queryObj.filter.expression}"))
+## end
+## $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Combined expressionNames = $util.toJson($expressionNames)"))
+## $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Combined expressionValues = $util.toJson($expressionValues)"))
 $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
 
 $util.toJson($queryObj)

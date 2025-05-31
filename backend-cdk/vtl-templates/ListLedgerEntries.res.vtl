@@ -12,7 +12,7 @@ $util.qr($ctx.log.info("ListLedgerEntries.res.vtl - Raw result from data source:
 ## Prepare items, defaulting to an empty list if null or no items are returned
 #set( $processedItems = [] )
 #if( !$util.isNull($ctx.result) && !$util.isNullOrEmpty($ctx.result.items) )
-  #if( $ctx.result.items.size() > 0 ) ## Ensure items is a list and has elements
+  #if( $ctx.result.items.size() > 0 )
       #set( $processedItems = $ctx.result.items )
   #end
 #else

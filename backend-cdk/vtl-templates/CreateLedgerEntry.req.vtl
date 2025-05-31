@@ -28,9 +28,6 @@
     "amount": $input.amount,
     "createdAt": $now,
     "updatedAt": $now
-    ## Note: 'createdByAdmin' field is intentionally NOT set here,
-    ## as this mutation is for self-service. It will be null or absent
-    ## in DynamoDB for entries created via this mutation.
 })
 
 ## Add description only if it's provided and not null.
@@ -39,10 +36,6 @@
 #if( $input.containsKey("description") )
     $util.qr($itemToCreate.put("description", $input.description))
 #else
-    ## If description is not in the input, it won't be an attribute on the DDB item.
-    ## The commented-out section below would explicitly set it to VTL null if not provided.
-    ## For most GraphQL schemas where 'description' is nullable (e.g., String),
-    ## omitting the attribute when not provided is perfectly fine.
     #*
     $util.qr($itemToCreate.put("description", null))
     *#

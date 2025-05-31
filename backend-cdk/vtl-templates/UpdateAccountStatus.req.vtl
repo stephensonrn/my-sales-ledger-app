@@ -49,7 +49,7 @@ $util.qr($expressionValues.put(":updatedAtVal", $util.dynamodb.toDynamoDB($util.
   ## Assumes 'id' of AccountStatus item IS the owner's sub.
   $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Non-admin user. Adding owner/ID condition."))
   $util.qr($conditionExpressionParts.add("#itemIdCond = :loggedInUserSubCond"))
-  $util.qr($expressionNames.put("#itemIdCond", "id")) ## 'id' is the attribute name in DynamoDB
+  $util.qr($expressionNames.put("#itemIdCond", "id"))
   $util.qr($expressionValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDB($context.identity.sub)))
 #else
   $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Admin user. Base condition 'attribute_exists(id)' applies."))

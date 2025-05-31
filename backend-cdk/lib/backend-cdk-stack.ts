@@ -84,7 +84,7 @@ export class BackendCdkStack extends cdk.Stack {
     new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
       userPoolId: this.userPool.userPoolId,
       groupName: 'Admin', 
-      description: 'Administrators with elevated privileges',
+      description: 'Administrators with higher privileges',
     });
 
     this.graphqlApi = new appsync.GraphqlApi(this, 'SalesLedgerAppSyncApi', {

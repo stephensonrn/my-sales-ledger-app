@@ -45,14 +45,13 @@ $util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Resolved ownerIdToQu
 #set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Assumes a GSI named 'byOwner' with 'owner' as the partition key
+  "index": "byOwner",
   "query": {
     "expression": "#ownerAttribute = :ownerValue",
     "expressionNames": {
       "#ownerAttribute": "owner"
     },
     "expressionValues": {
-      ## CRITICAL FIX: Use the determined $ownerIdToQuery, not $ctx.args.filter.owner.eq directly
       ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery)
     }
   },

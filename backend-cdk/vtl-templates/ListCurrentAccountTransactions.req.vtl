@@ -1,6 +1,6 @@
 ## VTL Request Template for Query.listCurrentAccountTransactions
 ## ATTEMPT_MAY30_TRANSACTION_FINAL_FIX - Uses claims.sub, logs ownerIdToQuery, correct DDB format, includes filters
-## Updated 31052025 1459
+## Updated 31052025 1459 (and with fix for expressionAttributeNames/Values placement)
 
 #set( $limit = $util.defaultIfNull($context.args.limit, 20) )
 #set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
@@ -8,7 +8,7 @@
 ## --- Determine the owner ID to query ---
 #set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
 #if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
-    $util.qr($ctx.log.info("ListCurrentAccountTransactions.req.vtl: Falling back to context.identity.sub for ownerIdToQuery"))
+    $util.qr($ctx.log.info("ListCurrentAccountTransactions.req.vtl: Falling back to context.identity.sub for ownerIdToQuery: ${context.identity.sub}"))
     #set( $ownerIdToQuery = $context.identity.sub )
 #end
 
@@ -50,18 +50,16 @@ $util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerId
 #set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner", ## Assumes GSI on CurrentAccountTransactionTable is named 'byOwner'
-  "query": { ## This object contains the KeyConditionExpression
+  "index": "byOwner",
+  "query": {
     "expression": $keyConditionExpression
   },
   "limit": $limit,
-  "scanIndexForward": false ## To get newest transactions first if 'createdAt' is sort key on GSI
+  "scanIndexForward": false
 })
 
 ## --- Handle pagination ---
 #if( $nextToken )
-  ## $nextToken from $context.args is already a string if provided, or VTL null.
-  ## DynamoDB expects the NextToken string directly.
   $util.qr($queryObj.put("nextToken", $nextToken))
 #end
 
@@ -95,21 +93,27 @@ $util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerId
   #if( !$filterExpressionParts.isEmpty() )
     $util.qr($queryObj.put("filter", {
       "expression": $util.listJoin(" AND ", $filterExpressionParts)
-      ## expressionNames and expressionValues for the filter are populated into the shared maps
     }))
   #end
 #end
 
-## Add the collected ExpressionAttributeNames and ExpressionAttributeValues to the top level of the query object
-## These apply to both the keyConditionExpression (inside "query") and the filterExpression (inside "filter")
+## Add the collected (and potentially expanded by filter) expressionNames and expressionValues
+## into the 'query' object and 'filter' object (if it exists) as AppSync expects.
 #if( !$expressionNames.isEmpty() )
-  $util.qr($queryObj.put("expressionAttributeNames", $expressionNames))
+  $util.qr($queryObj.query.put("expressionNames", $expressionNames))
+  #if( $queryObj.containsKey("filter") )
+    $util.qr($queryObj.filter.put("expressionNames", $expressionNames))
+  #end
 #end
 #if( !$expressionValues.isEmpty() )
-  $util.qr($queryObj.put("expressionAttributeValues", $expressionValues))
+  $util.qr($queryObj.query.put("expressionValues", $expressionValues))
+  #if( $queryObj.containsKey("filter") )
+    $util.qr($queryObj.filter.put("expressionValues", $expressionValues))
+  #end
 #end
 
 ## --- Final logging and return ---
-$util.qr($ctx.log.info("ListCurrentAccountTransactions.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+## The following log line was commented out in your provided VTL, uncomment if needed for debugging.
+## $util.qr($ctx.log.info("ListCurrentAccountTransactions.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
 
 $util.toJson($queryObj)

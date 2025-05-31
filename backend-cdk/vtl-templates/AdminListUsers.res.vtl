@@ -1,31 +1,58 @@
-## Admin List Users Response Mapping Template
+## Admin List Users Request Mapping Template
+## Revised to explicitly handle nextToken and filter for robust JSON payload
 
-#if($ctx.error)
-    ## If the Lambda function invocation itself failed (e.g., timeout, Lambda error)
-    $util.error($ctx.error.message, $ctx.error.type)
-#end
+## Assuming your GraphQL query arguments (limit, nextToken, filter) are top-level.
+## If they are nested under an 'input' object (e.g., adminListUsers(input: ListUsersInput)),
+## change the next line to: #set( $gqlArgs = $context.arguments.input )
+#set( $gqlArgs = $context.arguments )
 
-## Log the raw result from the Lambda function for debugging
-#set( $lambdaResult = $ctx.result )
-$util.qr($ctx.log.info("AdminListUsers.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+## Log the raw input arguments for debugging purposes
+$util.qr($ctx.log.info("AdminListUsers.req.vtl - Input arguments: $util.toJson($gqlArgs)"))
 
-## Prepare users list, defaulting to an empty list if null or no items are returned by Lambda
-#set( $processedUsers = [] )
-#if( !$util.isNull($lambdaResult) && !$util.isNullOrEmpty($lambdaResult.items) )
-  #if( $lambdaResult.items.size() > 0 ) ## Ensure items is a list and has elements
-      #set( $processedUsers = $lambdaResult.items )
-  #end
+## Prepare the query parameters for the Lambda
+#set( $limit = $util.defaultIfNull($gqlArgs.limit, 10) )
+#set( $rawNextToken = $util.defaultIfNullOrBlank($gqlArgs.nextToken, null) ) ## Get raw token or VTL null
+#set( $filterValue = $gqlArgs.filter ) ## Get raw filter or VTL null
+
+#if( !$util.isNull($filterValue) )
+    $util.qr($ctx.log.info("AdminListUsers.req.vtl - Filter provided: $util.toJson($filterValue)"))
 #else
-  $util.qr($ctx.log.info("AdminListUsers.res.vtl - No 'items' (users) found in Lambda result or result is null."))
+    $util.qr($ctx.log.info("AdminListUsers.req.vtl - No filter provided."))
 #end
 
-## Prepare nextToken, defaulting to null if not present or blank in Lambda result
-#set( $processedNextToken = $util.defaultIfNullOrBlank($lambdaResult.nextToken, null) )
+## Optional: Add validation for limit if necessary (e.g., ensure it's within a valid range)
+## #if( $limit <= 0 || $limit > 100 )
+##   $util.error("Limit must be between 1 and 100.", "ValidationException")
+## #end
 
-## Construct the final JSON response.
-## The GraphQL field is "users", so we map $processedUsers (derived from $lambdaResult.items) to it.
-## IMPORTANT: Use $util.toJson() for $processedUsers and $processedNextToken.
+## Create the base payload for the Lambda function
+#set( $payload = {
+    "limit": $limit ## limit will be a JSON number
+})
+
+## Conditionally add nextToken to the payload
+#if( !$util.isNull($rawNextToken) )
+    ## If rawNextToken is a string, it will be passed as a JSON string
+    $util.qr($payload.put("nextToken", "$rawNextToken"))
+#else
+    ## If rawNextToken is VTL null, pass JSON null
+    $util.qr($payload.put("nextToken", $null))
+#end
+
+## Conditionally add filter to the payload
+#if( !$util.isNull($filterValue) )
+    ## If filterValue is a VTL map, it will be passed as a JSON object
+    $util.qr($payload.put("filter", $filterValue))
+#else
+    ## If filterValue is VTL null, pass JSON null
+    $util.qr($payload.put("filter", $null))
+#end
+## Note: If your Lambda specifically expects the 'filter' field to be a stringified JSON
+## (e.g., "{\"key\":\"value\"}" or the string "null"),
+## then you should use $util.qr($payload.put("filter", $util.toJson($filterValue))) instead for the filter.
+## The current approach passes it as a direct JSON object or JSON null.
+
+## Final payload structure
 {
-  "users": $util.toJson($processedUsers),
-  "nextToken": $util.toJson($processedNextToken)
+  "payload": $payload
 }
