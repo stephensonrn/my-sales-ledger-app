@@ -1,4 +1,4 @@
-# Schema for Sales Ledger Application - Updated
+# Schema for Sales Ledger Application - Updated 2038 31052025
 
 # --- Enums ---
 enum LedgerEntryType {
@@ -57,8 +57,15 @@ type CognitoUser {
   status: String
   enabled: Boolean
   createdAt: AWSDateTime
-  updatedAt: AWSDateTime
+  updatedAt: AWSDateTime # This was in your query, renamed from lastModifiedAt for consistency if preferred
   attributes: [UserAttribute]
+
+  # --- ADDED/UPDATED FIELDS ---
+  id: ID!                # Often maps to Cognito 'sub' or 'Username'. Ensure your Lambda provides this.
+  email: String            # Ensure your Lambda extracts and provides this.
+  lastModifiedAt: AWSDateTime # Ensure your Lambda provides this (from UserLastModifiedDate).
+  groups: [String]         # Ensure your Lambda fetches and provides this.
+  # --- END ADDED/UPDATED FIELDS ---
 }
 
 # --- NEW: Structured Result Type for Admin Payment Request ---
@@ -85,7 +92,7 @@ type CurrentAccountTransactionConnection {
 }
 
 type UserListResult {
-  users: [CognitoUser]
+  users: [CognitoUser] # Make sure this list returns CognitoUser type
   nextToken: String
 }
 
@@ -105,7 +112,7 @@ input UpdateLedgerEntryInput {
 
 input UpdateAccountStatusInput {
   id: ID! # Should be the ID (sub) of the user whose status is being updated
-  totalUnapprovedInvoiceValue: Float # Made non-optional based on common use case
+  totalUnapprovedInvoiceValue: Float! # Made non-optional as per your previous VTL
 }
 
 # --- Input Type for Admin Creating Ledger Entry for a User ---
@@ -131,15 +138,21 @@ input SendPaymentRequestInput {
 
 # --- NEW: Input Type for adminCreateAccountStatus ---
 input AdminCreateAccountStatusInput {
-  ownerId: ID! # Changed from String! to ID! for consistency
-  initialUnapprovedInvoiceValue: Float! # Made non-optional
+  # ownerId: ID! # Assuming 'id' of AccountStatus is auto-generated or is the Cognito sub if that's the PK design
+  accountId: ID! # If AccountStatus items are uniquely identified by an accountId separate from its own 'id'
+                 # Or if 'id' of AccountStatus *is* the accountId/ownerId, this might be redundant
+                 # Based on AdminCreateAccountStatus.req.vtl, it seems 'id' is auto-generated for AccountStatus,
+                 # and 'accountId' (from input) and 'owner' (admin's sub) are stored.
+  initialUnapprovedInvoiceValue: Float!
+  status: String! # Added based on AdminCreateAccountStatus.req.vtl needing a status
 }
 
 # --- NEW: Input Type for adminAddCashReceipt ---
 input AdminAddCashReceiptInput {
-  targetOwnerId: ID! # Changed from String! to ID!
+  targetOwnerId: ID! # The owner the cash receipt is for
   amount: Float!
   description: String
+  # receiptDate: AWSDateTime # Optional: if client can specify, otherwise server sets it
 }
 
 
@@ -173,25 +186,26 @@ input ModelFloatFilterInput {
 
 input LedgerEntryFilterInput {
   id: ModelIDFilterInput
-  owner: ModelStringFilterInput 
+  owner: ModelStringFilterInput
   type: ModelStringFilterInput # Can now filter by LedgerEntryType string value
   createdAt: ModelStringFilterInput # Now supports range queries via 'between', 'gt', etc.
 }
 
 input AccountStatusFilterInput {
   id: ModelIDFilterInput
-  owner: ModelStringFilterInput
+  owner: ModelStringFilterInput # This is likely the Cognito Sub of the status record owner
+  # If you want to filter by the account an AccountStatus pertains to,
+  # ensure you have a queryable 'accountId' field in your AccountStatus DDB table and add it here.
   totalUnapprovedInvoiceValue: ModelFloatFilterInput
-  createdAt: ModelStringFilterInput # Added for consistency if needed
+  createdAt: ModelStringFilterInput
 }
 
 input CurrentAccountTransactionFilterInput {
   id: ModelIDFilterInput
   owner: ModelStringFilterInput
   type: ModelStringFilterInput # Can now filter by CurrentAccountTransactionType string value
-  createdAt: ModelStringFilterInput # Now supports range queries
+  createdAt: ModelStringFilterInput
 }
-
 
 # --- Query Type ---
 type Query @aws_cognito_user_pools {
@@ -199,14 +213,23 @@ type Query @aws_cognito_user_pools {
   getLedgerEntry(id: ID!): LedgerEntry
   listLedgerEntries(filter: LedgerEntryFilterInput, limit: Int, nextToken: String): LedgerEntryConnection
 
-  getAccountStatus(id: ID!): AccountStatus 
-  listAccountStatuses(owner: String, filter: AccountStatusFilterInput, limit: Int, nextToken: String): AccountStatusConnection
+  getAccountStatus(id: ID!): AccountStatus
+  listAccountStatuses(filter: AccountStatusFilterInput, limit: Int, nextToken: String): AccountStatusConnection # Removed 'owner: String' arg as filter handles it
 
   getCurrentAccountTransaction(id: ID!): CurrentAccountTransaction
   listCurrentAccountTransactions(filter: CurrentAccountTransactionFilterInput, limit: Int, nextToken: String): CurrentAccountTransactionConnection
 
-  adminListUsers(limit: Int, nextToken: String): UserListResult
+  adminListUsers(limit: Int, nextToken: String, filter: UserFilterInput): UserListResult # Added UserFilterInput for consistency
     @aws_auth(cognito_groups: ["Admin"])
+}
+
+# --- NEW: UserFilterInput for adminListUsers ---
+input UserFilterInput {
+  # Define fields your Lambda can filter by, e.g.:
+  username: ModelStringFilterInput
+  email: ModelStringFilterInput
+  status: ModelStringFilterInput
+  # group: String # Example if filtering by a single group name
 }
 
 # --- Mutation Type ---
@@ -215,29 +238,29 @@ type Mutation @aws_cognito_user_pools {
   # LedgerEntry mutations
   createLedgerEntry(input: CreateLedgerEntryInput!): LedgerEntry
   updateLedgerEntry(input: UpdateLedgerEntryInput!): LedgerEntry
-  deleteLedgerEntry(id: ID!): LedgerEntry
+  deleteLedgerEntry(id: ID!): LedgerEntry # Consider returning a status/confirmation type
 
   adminCreateLedgerEntry(input: AdminCreateLedgerEntryInput!): LedgerEntry
     @aws_auth(cognito_groups: ["Admin"])
 
   # AccountStatus Mutations
   updateAccountStatus(input: UpdateAccountStatusInput!): AccountStatus
-    @aws_auth(cognito_groups: ["Admin"])
-  adminCreateAccountStatus(input: AdminCreateAccountStatusInput!): AccountStatus # Changed to use input type
+    # Removed @aws_auth(cognito_groups: ["Admin"]) - VTL handles owner check; if only admin, add back
+  adminCreateAccountStatus(input: AdminCreateAccountStatusInput!): AccountStatus
     @aws_auth(cognito_groups: ["Admin"])
 
   # CurrentAccountTransaction Admin Mutation
-  adminAddCashReceipt(input: AdminAddCashReceiptInput!): CurrentAccountTransaction # Changed to use input type
+  adminAddCashReceipt(input: AdminAddCashReceiptInput!): CurrentAccountTransaction
     @aws_auth(cognito_groups: ["Admin"])
 
   # Payment Request Mutations
-  sendPaymentRequestEmail(input: SendPaymentRequestInput!): String # Changed to use input type
-  adminRequestPaymentForUser(input: AdminRequestPaymentForUserInput!): AdminPaymentRequestResult # Changed return type
+  sendPaymentRequestEmail(input: SendPaymentRequestInput!): String # Consider a status type
+  adminRequestPaymentForUser(input: AdminRequestPaymentForUserInput!): AdminPaymentRequestResult
     @aws_auth(cognito_groups: ["Admin"])
 }
 
 # --- Subscription Type ---
-type Subscription @aws_cognito_user_pools { 
+type Subscription @aws_cognito_user_pools {
   onCreateLedgerEntry(owner: String): LedgerEntry
     @aws_subscribe(mutations: ["createLedgerEntry", "adminCreateLedgerEntry"])
 }
