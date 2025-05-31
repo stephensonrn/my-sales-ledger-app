@@ -1,0 +1,18 @@
+## Update Account Status Response Mapping Template
+
+#if($ctx.error)
+    ## If there was an error from the data source, propagate it
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log the raw result from the data source for debugging
+#set( $logCtxResult = $util.toJson($ctx.result) )
+$util.qr($ctx.log.info("UpdateAccountStatus.res.vtl - Raw result from data source: $logCtxResult"))
+
+## Assuming $ctx.result contains the updated AccountStatus item from DynamoDB
+## and its structure (e.g., fields like id, status, owner, createdAt, updatedAt)
+## directly matches your GraphQL return type for the UpdateAccountStatus mutation.
+## If so, $util.toJson($ctx.result) is the most straightforward way to return it.
+## AppSync will automatically map the fields.
+
+$util.toJson($ctx.result)

@@ -1,0 +1,50 @@
+## Delete Ledger Entry Response Mapping Template
+
+#if($ctx.error)
+    ## If there was an error from the data source (e.g., conditional delete failed)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log what DynamoDB returned (if anything, depends on ReturnValues in the request VTL)
+#set( $logDataSourceResult = $util.toJson($ctx.result) )
+$util.qr($ctx.log.info("DeleteLedgerEntry.res.vtl - Raw result from data source: $logDataSourceResult"))
+
+## The ID of the item targeted for deletion is typically in the arguments.
+## Assuming the input structure is { input: { id: "..." } } or { id: "..." }
+#set( $deletedItemId = null )
+#if( !$util.isNull($context.arguments.input) && !$util.isNullOrBlank($context.arguments.input.id) )
+    #set( $deletedItemId = $context.arguments.input.id )
+#elseif( !$util.isNullOrBlank($context.arguments.id) )
+    #set( $deletedItemId = $context.arguments.id )
+#end
+
+#if( $util.isNullOrBlank($deletedItemId) )
+    ## This case should ideally not happen if request validation is in place,
+    ## or if the ID was mandatory for the delete operation.
+    ## However, as a fallback if $ctx.result does contain the ID (e.g. from ReturnValues=ALL_OLD):
+    #if( !$util.isNull($ctx.result) && !$util.isNullOrBlank($ctx.result.id) )
+        #set( $deletedItemId = $ctx.result.id )
+    #else
+        ## If ID cannot be determined, this is problematic.
+        ## For a delete response, you usually want to confirm WHICH ID was deleted.
+        ## Consider an error or a generic message if ID is absolutely unavailable.
+        $util.qr($ctx.log.warn("DeleteLedgerEntry.res.vtl - Could not determine the ID of the deleted item from arguments or result."))
+        ## Fallback to a generic response or error if ID is crucial for your GraphQL return type.
+        ## For this example, we'll allow a response without an ID if it's truly unobtainable,
+        ## though the GraphQL schema might require it.
+    #end
+#end
+
+## Construct the response.
+## The GraphQL return type for deleteLedgerEntry might be something like:
+## type DeletionResponse { id: ID, status: String! }
+## or just the ID, or a boolean. This template assumes it expects an object with id and status.
+#set( $responsePayload = {
+    "status": "deleted"
+})
+
+#if( !$util.isNullOrBlank($deletedItemId) )
+    $util.qr($responsePayload.put("id", $deletedItemId))
+#end
+
+$util.toJson($responsePayload)

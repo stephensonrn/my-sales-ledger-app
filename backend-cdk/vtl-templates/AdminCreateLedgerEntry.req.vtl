@@ -20,6 +20,12 @@
 #set( $now = $util.time.nowISO8601() )
 #set( $loggedInAdminSub = $context.identity.sub )
 
+#if( $util.isNullOrBlank($loggedInAdminSub) )
+    ## This should ideally be caught by resolver authorization rules (e.g., only allow users in "Admin" group)
+    ## but an extra check here is good defense.
+    $util.error("Admin identity (sub) is missing. Cannot determine creating admin.", "AuthenticationError")
+#end
+
 #set( $itemToCreate = {
     "id": $itemId,
     "owner": $input.targetUserId,  ## Maps input.targetUserId to the 'owner' attribute in DynamoDB
@@ -32,34 +38,31 @@
 
 ## Handle optional description:
 ## If 'description' is present in the input (even if null), it will be added to the item.
-## If 'description' is not part of the input, it won't be added to the item.
+## $util.dynamodb.toMapValues will convert a VTL null to a DynamoDB NULL type.
 #if( $input.containsKey("description") )
     $util.qr($itemToCreate.put("description", $input.description))
 #end
 
-## --- Optional Audit Metadata (Recommendation 4) ---
+## --- Optional Audit Metadata ---
 ## To use these, add the corresponding fields to your LedgerEntry type in schema.graphql:
 ##   createdByIp: AWSIPAddress  (or String)
-##   adminGroups: [String]    (or AWSJSON for the raw array)
+##   adminGroups: [String]    (or AWSJSON for the raw array if you want to store the JSON string directly)
 
 #if($context.identity.sourceIp && $context.identity.sourceIp.size() > 0)
     $util.qr($itemToCreate.put("createdByIp", $context.identity.sourceIp[0]))
 #end
 #if($context.identity.groups && !$context.identity.groups.isEmpty())
-    $util.qr($itemToCreate.put("adminGroups", $util.toJson($context.identity.groups))) ## Stores as a JSON string array
+    ## Storing as a DynamoDB String Set (SS) is often more queryable than a JSON string.
+    ## If your 'adminGroups' attribute in DynamoDB is a String Set, use:
+    ## $util.qr($itemToCreate.put("adminGroups", $util.dynamodb.toStringSet($context.identity.groups)))
+    ## If you prefer to store it as a JSON string representation of the array:
+    $util.qr($itemToCreate.put("adminGroups", $util.toJson($context.identity.groups))) ## Stores as a JSON string
 #end
 
-
-## --- Logging (Recommendation 5 - keeping it simple for now) ---
-## For more advanced conditional logging (e.g., only in dev):
-## You could pass a 'debug: true' argument in your GraphQL mutation input,
-## and then wrap logs with: #if( $input.debug == true ) $util.log.info(...) #end
-## Or, manage different VTL versions for dev/prod.
-## The current logs will always execute.
-$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Logged-in admin: $loggedInAdminSub"))
-$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Target owner for new entry: $input.targetUserId"))
-$util.qr($ctx.log.info("ADMIN_CREATE_LEDGER_REQ: Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
-
+## --- Logging ---
+$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Logged-in admin: $loggedInAdminSub"))
+$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Target owner for new entry: $input.targetUserId"))
+$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
 
 ## --- DynamoDB PutItem Operation ---
 {

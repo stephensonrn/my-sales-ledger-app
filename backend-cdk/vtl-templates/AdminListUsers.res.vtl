@@ -1,0 +1,31 @@
+## Admin List Users Response Mapping Template
+
+#if($ctx.error)
+    ## If the Lambda function invocation itself failed (e.g., timeout, Lambda error)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log the raw result from the Lambda function for debugging
+#set( $lambdaResult = $ctx.result )
+$util.qr($ctx.log.info("AdminListUsers.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+
+## Prepare users list, defaulting to an empty list if null or no items are returned by Lambda
+#set( $processedUsers = [] )
+#if( !$util.isNull($lambdaResult) && !$util.isNullOrEmpty($lambdaResult.items) )
+  #if( $lambdaResult.items.size() > 0 ) ## Ensure items is a list and has elements
+      #set( $processedUsers = $lambdaResult.items )
+  #end
+#else
+  $util.qr($ctx.log.info("AdminListUsers.res.vtl - No 'items' (users) found in Lambda result or result is null."))
+#end
+
+## Prepare nextToken, defaulting to null if not present or blank in Lambda result
+#set( $processedNextToken = $util.defaultIfNullOrBlank($lambdaResult.nextToken, null) )
+
+## Construct the final JSON response.
+## The GraphQL field is "users", so we map $processedUsers (derived from $lambdaResult.items) to it.
+## IMPORTANT: Use $util.toJson() for $processedUsers and $processedNextToken.
+{
+  "users": $util.toJson($processedUsers),
+  "nextToken": $util.toJson($processedNextToken)
+}

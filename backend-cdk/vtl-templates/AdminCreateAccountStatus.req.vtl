@@ -1,0 +1,51 @@
+## Admin Create Account Status Request Mapping Template (for DynamoDB PutItem)
+
+#set( $input = $context.args.input )
+
+## --- 1. Input Validation ---
+#if( $util.isNullOrBlank($input.accountId) )
+  $util.error("input.accountId is required to create an account status.", "ValidationException")
+#end
+#if( $util.isNullOrBlank($input.status) )
+  $util.error("input.status is required to create an account status.", "ValidationException")
+#end
+## Add any other necessary validation for input fields.
+
+## --- 2. Prepare Item Attributes ---
+#set( $itemId = $util.autoId() ) ## Generate a unique ID for the account status entry itself
+#set( $now = $util.time.nowISO8601() ) ## Use standard ISO8601 timestamp
+#set( $adminWhoIsCreating = $context.identity.sub )
+
+#if( $util.isNullOrBlank($adminWhoIsCreating) )
+    $util.error("Admin identity (sub) is missing. Cannot determine creator.", "AuthenticationError")
+#end
+
+#set( $itemToCreate = {
+    "id": $itemId,                                 ## Primary key for this AccountStatus record
+    "accountId": $input.accountId,                 ## The account this status pertains to
+    "status": $input.status,                       ## The status (e.g., "ACTIVE", "INACTIVE")
+    "owner": $adminWhoIsCreating,                  ## Records which admin created/owns this status record
+    "createdAt": $now,
+    "updatedAt": $now
+    ## Add any other fields that are part of your AccountStatus item
+})
+
+## Optional: Add a description if provided
+#if( $input.containsKey("description") && !$util.isNullOrBlank($input.description) )
+    $util.qr($itemToCreate.put("description", $input.description))
+#end
+
+## --- 3. Logging ---
+$util.qr($ctx.log.info("AdminCreateAccountStatus.req.vtl - Admin ($adminWhoIsCreating) creating status for account: $input.accountId"))
+$util.qr($ctx.log.info("AdminCreateAccountStatus.req.vtl - Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
+
+## --- 4. Construct DynamoDB PutItem Request ---
+{
+    "version": "2018-05-29",
+    "operation": "PutItem",
+    ## attributeValues must be a map of DynamoDB attribute values
+    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
+    "condition": {
+        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
+    }
+}

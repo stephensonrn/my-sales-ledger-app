@@ -1,0 +1,50 @@
+## Send Payment Request Email Response Mapping Template
+
+#if($ctx.error)
+    ## If the Lambda function itself threw an error (e.g., timed out, crashed, or $util.error was called in Lambda response VTL)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log the raw result from the Lambda function for debugging
+#set( $lambdaResult = $ctx.result )
+$util.qr($ctx.log.info("SendPaymentRequestEmail.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+
+## Option 1: Static Success Message (as per your original template)
+## This is suitable if the Lambda completing successfully is enough confirmation,
+## and your GraphQL mutation is defined to return a type like:
+## type EmailSentStatus { message: String! }
+
+#set( $responseMessage = "Payment request email sent successfully." )
+
+## You could optionally check the $lambdaResult for any specific error indicators
+## returned by the Lambda function itself (if it doesn't throw an error but returns a success:false payload)
+#if( !$util.isNull($lambdaResult) && $lambdaResult.containsKey("success") && $lambdaResult.success == false )
+    #if( $lambdaResult.containsKey("errorMessage") )
+        #set( $responseMessage = $lambdaResult.errorMessage )
+        ## Optionally, you could choose to throw a GraphQL error instead:
+        ## $util.error($lambdaResult.errorMessage, "LambdaExecutionError")
+    #else
+        #set( $responseMessage = "An unspecified error occurred while sending the email." )
+        ## $util.error("An unspecified error occurred while sending the email.", "LambdaExecutionError")
+    #end
+#elseif ( !$util.isNull($lambdaResult) && $lambdaResult.containsKey("message") && !$util.isNullOrBlank($lambdaResult.message) )
+    ## If the Lambda returns its own message field, prefer that.
+    #set( $responseMessage = $lambdaResult.message )
+#end
+
+{
+  "message": $util.toJson($responseMessage)
+}
+
+## Option 2: Directly return the Lambda result (if its structure matches the GraphQL return type)
+## If your Lambda function returns a JSON object like {"message": "Actual status...", "details": "..."}
+## and your GraphQL return type for this mutation matches that structure, you could simply do:
+#*
+$util.toJson($lambdaResult)
+*#
+
+## Option 3: Return a simple string (if your GraphQL mutation returns String!)
+## If the Lambda itself returns a success string, or if you just want to confirm.
+#*
+$util.toJson("Payment request email processed.")
+*#

@@ -1,0 +1,49 @@
+## Send Payment Request Email Request Mapping Template
+
+#set( $input = $context.arguments.input )
+
+## Log the input for debugging purposes
+$util.qr($ctx.log.info("SendPaymentRequestEmail.req.vtl - Input arguments: $util.toJson($input)"))
+
+## Extract and validate required email details from the input arguments
+#set( $toEmail = $input.toEmail )
+#if( $util.isNullOrBlank($toEmail) )
+  $util.error("Input 'toEmail' is required.", "ValidationException")
+#end
+
+#set( $subject = $input.subject )
+#if( $util.isNullOrBlank($subject) )
+  $util.error("Input 'subject' is required.", "ValidationException")
+#end
+
+#set( $body = $input.body )
+#if( $util.isNullOrBlank($body) )
+  $util.error("Input 'body' is required.", "ValidationException")
+#end
+
+## Any other fields from $input that the Lambda needs can be extracted and validated similarly.
+## For example, if you had a 'userId' or 'templateName':
+## #set( $userId = $input.userId )
+## #if( $util.isNullOrBlank($userId) )
+##   $util.error("Input 'userId' is required.", "ValidationException")
+## #end
+
+## Prepare the payload for the Lambda function.
+## The Lambda function itself should access its own environment variables like SES_FROM_ADDRESS and ADMIN_GROUP_NAME.
+## They do not need to be (and cannot be reliably) passed from AppSync VTL this way.
+{
+  "payload": { ## It's good practice to nest the actual arguments under a "payload" key for Lambda
+    "toEmail": "$toEmail",
+    "subject": "$subject",
+    "body": "$body"
+    ## Add any other validated input fields here that the Lambda needs, e.g.:
+    ## "userId": "$userId",
+    ## "someOtherInput": $util.toJson($input.someOtherInput) ## if it's an object/array
+  }
+}
+
+## AppSync will automatically wrap this in the standard Lambda request structure,
+## so the above becomes event.payload in your Lambda handler (if using a direct Lambda proxy).
+## If you are using a structure like { "version": "2017-02-28", "operation": "Invoke", "payload": { ... } },
+## then the above map should be the value of the "payload" key in that structure.
+## For simplicity with AWS Lambda data sources, just returning the payload map is usually sufficient.

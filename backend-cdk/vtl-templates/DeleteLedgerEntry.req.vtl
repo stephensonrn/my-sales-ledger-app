@@ -7,19 +7,19 @@
 
 #set( $targetId = $context.args.id )
 
-## --- 1. Input Validation (Recommendation 1) ---
+## --- 1. Input Validation ---
 #if( $util.isNullOrBlank($targetId) )
   $util.error("Missing required argument: id for deleteLedgerEntry.", "ValidationException")
 #end
 
-## --- 2. Logging (Recommendation 2 - Minimal and Safe) ---
-$util.qr($ctx.log.info("DELETE_LEDGER_REQ: Requesting User (sub): ${context.identity.sub}"))
-$util.qr($ctx.log.info("DELETE_LEDGER_REQ: Attempting to delete LedgerEntry ID: ${targetId}"))
+## --- 2. Logging ---
+$util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Requesting User (sub): ${context.identity.sub}"))
+$util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Attempting to delete LedgerEntry ID: ${targetId}"))
 #if( $context.identity.groups && !$context.identity.groups.isEmpty() )
-    $util.qr($ctx.log.info("DELETE_LEDGER_REQ: User Groups: $util.toJson($context.identity.groups)"))
+    $util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: User Groups: $util.toJson($context.identity.groups)"))
 #end
 
-## --- 3. Condition Expression for Authorization & Existence (Multi-Tenant Best Practice) ---
+## --- 3. Condition Expression for Authorization & Existence ---
 #set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
 #set( $expressionNames = {} )
 #set( $expressionValues = {} )
@@ -29,12 +29,11 @@ $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Attempting to delete LedgerEntry ID: 
     #set( $isActuallyAdmin = true )
 #end
 
-#if( $isActuallyAdmin == true )
-  $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Admin user. Applying base condition only (attribute_exists(id))."))
+#if( $isActuallyAdmin ) ## Simplified boolean check
+  $util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Admin user. Applying base condition only (attribute_exists(id))."))
   ## Admin user: The base condition "attribute_exists(id)" is sufficient.
-  ## They are trusted to delete the record specified by $targetId if it exists.
 #else
-  $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Non-admin user. Adding owner check to condition."))
+  $util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Non-admin user. Adding owner check to condition."))
   ## Non-admin user: Enforce that they are deleting their own entry.
   $util.qr($conditionExpressionParts.add("#ownerAttributeCond = :loggedInUserSubCond"))
   $util.qr($expressionNames.put("#ownerAttributeCond", "owner"))
@@ -42,7 +41,7 @@ $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Attempting to delete LedgerEntry ID: 
 #end
 
 #set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
-$util.qr($ctx.log.info("DELETE_LEDGER_REQ: Final Condition Expression: $finalConditionExpression"))
+$util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Final Condition Expression: $finalConditionExpression"))
 
 
 ## --- DynamoDB DeleteItem Operation ---
@@ -54,7 +53,11 @@ $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Final Condition Expression: $finalCon
   },
   "condition": {
     "expression": $finalConditionExpression
+    ## For AppSync DeleteItem, expressionNames and expressionValues related to the condition
+    ## are placed within this "condition" object.
   }
+  ## Optional: If you want the response VTL to have access to the deleted item's attributes:
+  ## ,"returnValues": "ALL_OLD"
 })
 
 #if( !$expressionNames.isEmpty() )
@@ -64,6 +67,6 @@ $util.qr($ctx.log.info("DELETE_LEDGER_REQ: Final Condition Expression: $finalCon
   $util.qr($dynamoDBRequest.condition.put("expressionValues", $expressionValues))
 #end
 
-$util.qr($ctx.log.info("DELETE_LEDGER_REQ: Final DynamoDB Request Object: $util.toJson($dynamoDBRequest)"))
+$util.qr($ctx.log.info("DeleteLedgerEntry.req.vtl: Final DynamoDB Request Object: $util.toJson($dynamoDBRequest)"))
 
 $util.toJson($dynamoDBRequest)

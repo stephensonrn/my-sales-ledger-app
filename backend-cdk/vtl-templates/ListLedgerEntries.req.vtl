@@ -7,23 +7,23 @@
 ## --- Determine the owner ID to query ---
 #set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
 #if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
-    $util.qr($ctx.log.info("LEDGER_REQ_VTL: Falling back to context.identity.sub for ownerIdToQuery"))
+    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Falling back to context.identity.sub for ownerIdToQuery"))
     #set( $ownerIdToQuery = $context.identity.sub )
 #end
 
 ## --- Admin Override Logic ---
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
-    #set( $adminLogMsg = "LEDGER_REQ_VTL: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
-    $util.qr($ctx.log.info($adminLogMsg))
-    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+    #set( $ownerFromFilter = $context.args.filter.owner.eq )
+    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Admin override. Setting ownerIdToQuery from filter: $ownerFromFilter"))
+    #set( $ownerIdToQuery = $ownerFromFilter )
   #else
-    #set( $adminLogMsg = "LEDGER_REQ_VTL: Admin call, no owner filter. Defaulting to admin's own ID from claims: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($adminLogMsg))
+    ## For admin call with no owner filter, $ownerIdToQuery (admin's own ID) will be used.
+    ## This is a design choice; if admins should query all owners without a filter, this VTL would need a different GSI or approach.
+    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Admin call, no specific owner filter provided. Querying for admin's own ID: $ownerIdToQuery"))
   #end
 #else
-    #set( $nonAdminLogMsg = "LEDGER_REQ_VTL: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($nonAdminLogMsg))
+    $util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Non-admin call. Using identity's ID: $ownerIdToQuery"))
 #end
 
 ## --- Log the resolved ownerIdToQuery safely ---
@@ -31,30 +31,32 @@
 #if( !$util.isNullOrBlank($ownerIdToQuery) )
   #set( $logResolvedOwnerId = $ownerIdToQuery )
 #end
-$util.qr($ctx.log.info("LEDGER_REQ_VTL: Resolved ownerIdToQuery before validation = ${logResolvedOwnerId}"))
+$util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Resolved ownerIdToQuery before validation = $logResolvedOwnerId")) ## Used direct substitution
 
 ## --- Ensure ownerIdToQuery is not null or empty ---
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
   $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated or admin provides a filter.", "InvalidRequestException")
 #end
 
-## --- Initialize Expression Attributes ---
-#set( $expressionNames = { "#ownerAttribute": "owner" } )
-#set( $expressionValues = { ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery) } )
+## --- Initialize Expression Attributes (these will be shared by key condition and filter) ---
+#set( $expressionNames = {} )
+#set( $expressionValues = {} )
+
+## --- Key Condition Expression for GSI 'byOwner' ---
 #set( $keyConditionExpression = "#ownerAttribute = :ownerValue" )
+$util.qr($expressionNames.put("#ownerAttribute", "owner"))
+$util.qr($expressionValues.put(":ownerValue", $util.dynamodb.toDynamoDB($ownerIdToQuery)))
 
 ## --- Build base query object ---
 #set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
   "index": "byOwner", ## Assumes GSI on LedgerEntryTable is named 'byOwner'
-  "query": {
-    "expression": $keyConditionExpression,
-    "expressionNames": $expressionNames,
-    "expressionValues": $expressionValues
+  "query": { ## This object contains the KeyConditionExpression
+    "expression": $keyConditionExpression
   },
   "limit": $limit,
-  "scanIndexForward": false ## To get newest entries first if 'createdAt' is sort key on GSI
+  "scanIndexForward": false ## To get newest entries first if 'createdAt' (or other sort key) is sort key on GSI
 })
 
 ## --- Handle pagination ---
@@ -69,16 +71,20 @@ $util.qr($ctx.log.info("LEDGER_REQ_VTL: Resolved ownerIdToQuery before validatio
   ## Filter by type (example)
   #if( $context.args.filter.type && $context.args.filter.type.eq && !$util.isNullOrBlank($context.args.filter.type.eq) )
     $util.qr($filterExpressionParts.add("#filterLedgerEntryType = :filterLedgerEntryTypeValue"))
-    $util.qr($expressionNames.put("#filterLedgerEntryType", "type")) 
+    $util.qr($expressionNames.put("#filterLedgerEntryType", "type"))
     $util.qr($expressionValues.put(":filterLedgerEntryTypeValue", $util.dynamodb.toDynamoDB($context.args.filter.type.eq)))
   #end
 
   ## Filter by createdAt range (example, using ModelStringFilterInput's 'between')
   #if( $context.args.filter.createdAt && $context.args.filter.createdAt.between && $context.args.filter.createdAt.between.size() == 2 )
-    $util.qr($filterExpressionParts.add("#filterCreatedAt BETWEEN :startRange AND :endRange"))
-    $util.qr($expressionNames.put("#filterCreatedAt", "createdAt"))
-    $util.qr($expressionValues.put(":startRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[0])))
-    $util.qr($expressionValues.put(":endRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[1])))
+    #if( !$util.isNullOrBlank($context.args.filter.createdAt.between[0]) && !$util.isNullOrBlank($context.args.filter.createdAt.between[1]) )
+        $util.qr($filterExpressionParts.add("#filterCreatedAt BETWEEN :startRange AND :endRange"))
+        $util.qr($expressionNames.put("#filterCreatedAt", "createdAt"))
+        $util.qr($expressionValues.put(":startRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[0])))
+        $util.qr($expressionValues.put(":endRange", $util.dynamodb.toDynamoDB($context.args.filter.createdAt.between[1])))
+    #else
+        $util.qr($ctx.log.warn("ListLedgerEntries.req.vtl: createdAt 'between' filter provided but one or both range values are null/blank."))
+    #end
   #end
 
   ## Add other filter conditions here using the same pattern...
@@ -87,13 +93,20 @@ $util.qr($ctx.log.info("LEDGER_REQ_VTL: Resolved ownerIdToQuery before validatio
   #if( !$filterExpressionParts.isEmpty() )
     $util.qr($queryObj.put("filter", {
       "expression": $util.listJoin(" AND ", $filterExpressionParts)
-      ## expressionNames and expressionValues for the filter are already part of the main maps
     }))
   #end
 #end
 
+## Add the collected ExpressionAttributeNames and ExpressionAttributeValues to the top level of the query object
+## These apply to both the keyConditionExpression (inside "query") and the filterExpression (inside "filter")
+#if( !$expressionNames.isEmpty() )
+  $util.qr($queryObj.put("expressionAttributeNames", $expressionNames))
+#end
+#if( !$expressionValues.isEmpty() )
+  $util.qr($queryObj.put("expressionAttributeValues", $expressionValues))
+#end
+
 ## --- Final logging and return ---
-#set( $finalQueryLog = $util.toJson($queryObj) )
-$util.qr($ctx.log.info("LEDGER_REQ_VTL: Final DynamoDB Query Object: ${finalQueryLog}"))
+$util.qr($ctx.log.info("ListLedgerEntries.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
 
 $util.toJson($queryObj)

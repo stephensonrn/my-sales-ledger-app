@@ -33,21 +33,23 @@
     ## in DynamoDB for entries created via this mutation.
 })
 
-## Add description only if it's provided in the input
+## Add description only if it's provided and not null.
+## If $input.description is provided as VTL null, $util.dynamodb.toMapValues will store it as DynamoDB NULL type.
+## If you want to omit the attribute entirely if $input.description is null, add: #if( !$util.isNull($input.description) ) before the put.
 #if( $input.containsKey("description") )
     $util.qr($itemToCreate.put("description", $input.description))
 #else
-    ## If you want to ensure description is explicitly null if not provided,
-    ## and your schema's 'description' field is nullable (e.g., String, not String!),
-    ## you could uncomment the next line:
+    ## If description is not in the input, it won't be an attribute on the DDB item.
+    ## The commented-out section below would explicitly set it to VTL null if not provided.
+    ## For most GraphQL schemas where 'description' is nullable (e.g., String),
+    ## omitting the attribute when not provided is perfectly fine.
     #*
     $util.qr($itemToCreate.put("description", null))
     *#
-    ## Otherwise, if description is not in the input, it won't be an attribute on the DDB item.
 #end
 
-## Minimal Logging
-$util.qr($ctx.log.info("CREATE_LEDGER_REQ: User ($ownerId) creating entry. Item: $util.toJson($itemToCreate)"))
+## Logging
+$util.qr($ctx.log.info("CreateLedgerEntry.req.vtl: User ($ownerId) creating entry. Item: $util.toJson($itemToCreate)"))
 
 ## DynamoDB PutItem Operation
 {

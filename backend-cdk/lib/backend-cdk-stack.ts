@@ -1,9 +1,5 @@
 // backend-cdk/lib/backend-cdk-stack.ts
-// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES
-// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1457
-// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1504
-// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1513
-// ATTEMPT_MAY30_COMPLETE_WITH_LAMBDA_ENTRY_FIXES Trival change 1529
+// Incorporates changes to link all 17 additional custom VTL files
 
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -37,7 +33,7 @@ export class BackendCdkStack extends cdk.Stack {
 
     cdk.Tags.of(this).add('Project', 'SalesLedger');
     cdk.Tags.of(this).add('Environment', props?.env?.region || 'dev');
-    cdk.Tags.of(this).add('DeploymentFocus', 'FixLambdaEntryPathsAndResponseVTL');
+    cdk.Tags.of(this).add('DeploymentFocus', 'LinkAllCustomVTLs'); // Updated focus
 
     const companyNameCustomAttributeDefinition = new cognito.StringAttribute({
       mutable: true,
@@ -73,7 +69,7 @@ export class BackendCdkStack extends cdk.Stack {
           cognito.OAuthScope.PROFILE, cognito.OAuthScope.COGNITO_ADMIN
         ],
         callbackUrls: [
-          'http://localhost:5173/callback',        
+          'http://localhost:5173/callback',      
           `https://www.salesledgersync.com/callback` 
         ],
         logoutUrls: [
@@ -112,9 +108,9 @@ export class BackendCdkStack extends cdk.Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     this.ledgerEntryTable.addGlobalSecondaryIndex({
-    indexName: 'byOwner',
-    partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+      indexName: 'byOwner',
+      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
     });
 
     this.accountStatusTable = new dynamodb.Table(this, 'AccountStatusTable', {
@@ -135,9 +131,9 @@ export class BackendCdkStack extends cdk.Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     this.transactionTable.addGlobalSecondaryIndex({
-    indexName: 'byOwner',
-    partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
-    sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
+      indexName: 'byOwner',
+      partitionKey: { name: 'owner', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING }, 
     });
 
     const nodeJsFunctionProps: Omit<lambda_nodejs.NodejsFunctionProps, 'entry' | 'handler' | 'role' | 'functionName' | 'environment'> = {
@@ -155,7 +151,7 @@ export class BackendCdkStack extends cdk.Stack {
         ...nodeJsFunctionProps,
         functionName: `sendPaymentRequestFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'), // Corrected
+        entry: path.join(__dirname, '../lambda-handlers/sendPaymentRequest/handler.ts'),
         role: sendPaymentRequestRole,
         timeout: Duration.seconds(30),
         environment: {
@@ -174,7 +170,7 @@ export class BackendCdkStack extends cdk.Stack {
         ...nodeJsFunctionProps,
         functionName: `adminDataActionsFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'), // Corrected
+        entry: path.join(__dirname, '../lambda-handlers/adminDataActions/handler.ts'),
         role: adminDataActionsRole,
         timeout: Duration.seconds(30), 
         environment: {
@@ -194,7 +190,7 @@ export class BackendCdkStack extends cdk.Stack {
         ...nodeJsFunctionProps,
         functionName: `adminListUsersFunction-${this.stackName}`,
         handler: 'handler',
-        entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'), // Corrected
+        entry: path.join(__dirname, '../lambda-handlers/adminListUsers/handler.ts'),
         role: adminListUsersRole,
         timeout: Duration.seconds(15),
         environment: { USER_POOL_ID: this.userPool.userPoolId },
@@ -211,7 +207,7 @@ export class BackendCdkStack extends cdk.Stack {
     this.monthlyReportMailerFunction = new lambda_nodejs.NodejsFunction(this, 'MonthlyReportMailerFunction', {
       ...nodeJsFunctionProps,
       functionName: `monthlyReportMailerFunction-${this.stackName}`,
-      entry: path.join(__dirname, '../lambda-handlers/monthlyReportMailer/index.ts'), // Corrected (assuming index.ts is the entry)
+      entry: path.join(__dirname, '../lambda-handlers/monthlyReportMailer/index.ts'),
       handler: 'handler',
       role: monthlyReportMailerRole,
       timeout: Duration.minutes(10),
@@ -237,7 +233,7 @@ export class BackendCdkStack extends cdk.Stack {
     });
     scheduleRule.addTarget(new targets.LambdaFunction(this.monthlyReportMailerFunction));
 
-    // --- Apply Permissions to Lambdas (Ensure these are complete and correct) ---
+    // --- Apply Permissions to Lambdas ---
     if (sendPaymentRequestRole) {
       sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] })); 
       sendPaymentRequestRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ["cognito-idp:AdminGetUser"], resources: [this.userPool.userPoolArn] }));
@@ -275,109 +271,114 @@ export class BackendCdkStack extends cdk.Stack {
 
     // --- Create and Attach AppSync Resolvers ---
 
-    // **** CORRECTED listResponseMappingTemplate with SAFER LOGGING and CORRECT RETURN ****
-    const listResponseMappingTemplate = appsync.MappingTemplate.fromString(`
-      ## RESP_VTL_LOGGED_FINAL_FIX - May 30 
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG --- List Query Response (Field: " + $ctx.info.fieldName + ") ---"))
-      
-      #set( $logCtxError = $util.toJson($ctx.error) )
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.error (from DDB or request VTL): " + $logCtxError))
-      
-      #set( $logCtxResult = $util.toJson($ctx.result) )
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result (raw from DDB): " + $logCtxResult))
-      
-      #set( $logRawNextToken = "null" ) 
-      #if( !$util.isNull($ctx.result) )
-        #set( $logRawNextToken = $util.toJson($ctx.result.nextToken) )
-      #end
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Raw nextToken from ctx.result: " + $logRawNextToken))
-
-      #if($ctx.error)
-        $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Error detected in ctx.error. Calling $util.error to return GraphQL error."))
-        $util.error($ctx.error.message, $ctx.error.type)
-      #end
-
-      #set( $processedItems = [] ) 
-      #if( !$util.isNull($ctx.result) && !$util.isNull($ctx.result.items) )
-        #if( !$util.isList($ctx.result.items) )
-          #set( $itemsWarningValue = $util.toJson($ctx.result.items) )
-          $util.qr($ctx.log.warn("RESPONSE_MAPPER_DEBUG: Warning - ctx.result.items is present but not a list. Value: " + $itemsWarningValue))
-        #else
-          #set( $processedItems = $ctx.result.items )
-        #end
-      #else
-        $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: ctx.result or ctx.result.items is null/undefined. items defaults to empty list [] for response."))
-      #end
-
-      #set( $processedNextToken = $util.defaultIfNullOrBlank($ctx.result.nextToken, null) )
-      
-      #set( $logProcessedItems = $util.toJson($processedItems) )
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed items for final map: " + $logProcessedItems))
-      
-      #set( $logProcessedNextToken = $util.toJson($processedNextToken) )
-      $util.qr($ctx.log.info("RESPONSE_MAPPER_DEBUG: Processed nextToken for final map: " + $logProcessedNextToken))
-
-      {
-        "items": $processedItems,
-        "nextToken": $processedNextToken
-      }
-    `);
-    // **** END CORRECTED listResponseMappingTemplate ****
-
+    // This shared variable is no longer needed for the list resolvers below,
+    // as each will point to its own response VTL file.
+    // const listResponseMappingTemplate = appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatusesByOwner.res.vtl'));
+    
     const getItemResponseMappingTemplate = appsync.MappingTemplate.dynamoDbResultItem();
 
     // == LedgerEntry Resolvers ==
-    ledgerEntryDataSource.createResolver('GetLedgerEntryResolver', { typeName: 'Query', fieldName: 'getLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('ListLedgerEntriesResolver', { typeName: 'Query', fieldName: 'listLedgerEntries', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListLedgerEntries.req.vtl')), responseMappingTemplate: listResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('CreateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'createLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/CreateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('UpdateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'updateLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('DeleteLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'deleteLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/DeleteLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
-    ledgerEntryDataSource.createResolver('AdminCreateLedgerEntryResolver', { typeName: 'Mutation', fieldName: 'adminCreateLedgerEntry', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateLedgerEntry.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
+    ledgerEntryDataSource.createResolver('GetLedgerEntryResolver', { 
+        typeName: 'Query', 
+        fieldName: 'getLedgerEntry', 
+        requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), 
+        responseMappingTemplate: getItemResponseMappingTemplate 
+    });
+    ledgerEntryDataSource.createResolver('ListLedgerEntriesResolver', { 
+        typeName: 'Query', 
+        fieldName: 'listLedgerEntries', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListLedgerEntries.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListLedgerEntries.res.vtl'))
+    });
+    ledgerEntryDataSource.createResolver('CreateLedgerEntryResolver', { 
+        typeName: 'Mutation', 
+        fieldName: 'createLedgerEntry', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/CreateLedgerEntry.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/CreateLedgerEntry.res.vtl')) // CHANGED
+    });
+    ledgerEntryDataSource.createResolver('UpdateLedgerEntryResolver', { 
+        typeName: 'Mutation', 
+        fieldName: 'updateLedgerEntry', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateLedgerEntry.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateLedgerEntry.res.vtl')) // CHANGED
+    });
+    ledgerEntryDataSource.createResolver('DeleteLedgerEntryResolver', { 
+        typeName: 'Mutation', 
+        fieldName: 'deleteLedgerEntry', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/DeleteLedgerEntry.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/DeleteLedgerEntry.res.vtl')) // CHANGED
+    });
+    ledgerEntryDataSource.createResolver('AdminCreateLedgerEntryResolver', { 
+        typeName: 'Mutation', 
+        fieldName: 'adminCreateLedgerEntry', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateLedgerEntry.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateLedgerEntry.res.vtl')) // CHANGED
+    });
 
     // == AccountStatus Resolvers ==
-    accountStatusDataSource.createResolver('GetAccountStatusResolver', { typeName: 'Query', fieldName: 'getAccountStatus', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
-    accountStatusDataSource.createResolver('ListAccountStatusesResolverV2', { // <<< CHANGED Logical ID
-  typeName: 'Query', 
-  fieldName: 'listAccountStatuses', 
-  requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatusesByOwner.req.vtl')), 
-  responseMappingTemplate: listResponseMappingTemplate 
-});
-    accountStatusDataSource.createResolver('UpdateAccountStatusResolver', { typeName: 'Mutation', fieldName: 'updateAccountStatus', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateAccountStatus.req.vtl')), responseMappingTemplate: getItemResponseMappingTemplate });
+    accountStatusDataSource.createResolver('GetAccountStatusResolver', { 
+        typeName: 'Query', 
+        fieldName: 'getAccountStatus', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/GetAccountStatus.req.vtl')),     // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/GetAccountStatus.res.vtl'))      // CHANGED
+    });
+    accountStatusDataSource.createResolver('ListAccountStatusesResolverV2', { 
+        typeName: 'Query', 
+        fieldName: 'listAccountStatuses', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatusesByOwner.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListAccountStatuses.res.vtl'))
+    });
+    accountStatusDataSource.createResolver('UpdateAccountStatusResolver', { 
+        typeName: 'Mutation', 
+        fieldName: 'updateAccountStatus', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateAccountStatus.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/UpdateAccountStatus.res.vtl')) // CHANGED
+    });
 
     // == CurrentAccountTransaction Resolvers ==
-    transactionDataSource.createResolver('GetCurrentAccountTransactionResolver', { typeName: 'Query', fieldName: 'getCurrentAccountTransaction', requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), responseMappingTemplate: getItemResponseMappingTemplate });
-    transactionDataSource.createResolver('ListCurrentAccountTransactionsResolver', { typeName: 'Query', fieldName: 'listCurrentAccountTransactions', requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListCurrentAccountTransactions.req.vtl')), responseMappingTemplate: listResponseMappingTemplate });
+    transactionDataSource.createResolver('GetCurrentAccountTransactionResolver', { 
+        typeName: 'Query', 
+        fieldName: 'getCurrentAccountTransaction', 
+        requestMappingTemplate: appsync.MappingTemplate.dynamoDbGetItem('id', 'id'), 
+        responseMappingTemplate: getItemResponseMappingTemplate 
+    });
+    transactionDataSource.createResolver('ListCurrentAccountTransactionsResolver', { 
+        typeName: 'Query', 
+        fieldName: 'listCurrentAccountTransactions', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListCurrentAccountTransactions.req.vtl')), 
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/ListCurrentAccountTransactions.res.vtl'))
+    });
 
-    // == Lambda Resolvers (Ensure full properties) ==
+    // == Lambda Resolvers (Now using custom VTL files) ==
     adminDataActionsDataSource.createResolver('AdminAddCashReceiptResolver', { 
-      typeName: 'Mutation', 
-      fieldName: 'adminAddCashReceipt', 
-      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
-      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+        typeName: 'Mutation', 
+        fieldName: 'adminAddCashReceipt', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminAddCashReceipt.req.vtl')),       // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminAddCashReceipt.res.vtl'))        // CHANGED
     });
     adminDataActionsDataSource.createResolver('AdminCreateAccountStatusResolver', { 
-      typeName: 'Mutation', 
-      fieldName: 'adminCreateAccountStatus', 
-      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
-      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+        typeName: 'Mutation', 
+        fieldName: 'adminCreateAccountStatus', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateAccountStatus.req.vtl')), // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminCreateAccountStatus.res.vtl'))  // CHANGED
     });
     sendPaymentRequestDataSource.createResolver('SendPaymentRequestEmailResolver', { 
-      typeName: 'Mutation', 
-      fieldName: 'sendPaymentRequestEmail', 
-      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
-      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+        typeName: 'Mutation', 
+        fieldName: 'sendPaymentRequestEmail', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/SendPaymentRequestEmail.req.vtl')), // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/SendPaymentRequestEmail.res.vtl'))  // CHANGED
     });
     adminListUsersDataSource.createResolver('AdminListUsersResolver', { 
-      typeName: 'Query', 
-      fieldName: 'adminListUsers', 
-      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
-      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+        typeName: 'Query', 
+        fieldName: 'adminListUsers', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminListUsers.req.vtl')),           // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminListUsers.res.vtl'))            // CHANGED
     });
     adminDataActionsDataSource.createResolver('AdminRequestPaymentForUserResolver', { 
-      typeName: 'Mutation', 
-      fieldName: 'adminRequestPaymentForUser', 
-      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(), 
-      responseMappingTemplate: appsync.MappingTemplate.lambdaResult() 
+        typeName: 'Mutation', 
+        fieldName: 'adminRequestPaymentForUser', 
+        requestMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminRequestPaymentForUser.req.vtl')), // CHANGED
+        responseMappingTemplate: appsync.MappingTemplate.fromFile(path.join(__dirname, '../vtl-templates/AdminRequestPaymentForUser.res.vtl'))  // CHANGED
     });
 
     // --- Stack Outputs ---

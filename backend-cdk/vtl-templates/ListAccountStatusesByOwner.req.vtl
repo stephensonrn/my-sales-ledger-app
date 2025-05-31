@@ -1,55 +1,77 @@
-## REQ_VTL_STATUS_FIX_V10_MAY30_NO_INLINE_END_COMMENT ## NEW UNIQUE MARKER
-## REQ_VTL_STATUS 1541 30 May ## NEW UNIQUE MARKER
+## List Account Statuses by owner Request Mapping Template
+## Updated 1611 31052025
 
-#set( $limit = $util.defaultIfNull($context.args.limit, 1) )
+#set( $limit = $util.defaultIfNull($context.args.limit, 10) )
 #set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) )
 
-#set( $ownerIdToQuery = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
-#if( $util.isNull($ownerIdToQuery) && !$util.isNull($context.identity.sub) )
-    #set( $logMsgFallback = "STATUS_REQ_VTL_V10: Fallback to context.identity.sub for ownerIdToQuery: " + $context.identity.sub )
-    $util.qr($ctx.log.info($logMsgFallback))
-    #set( $ownerIdToQuery = $context.identity.sub )
+## --- Determine the owner ID to query ---
+#set( $ownerIdFromIdentity = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
+#if( $util.isNull($ownerIdFromIdentity) && !$util.isNull($context.identity.sub) )
+    $util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Falling back to context.identity.sub for ownerIdFromIdentity: ${context.identity.sub}"))
+    #set( $ownerIdFromIdentity = $context.identity.sub )
 #end
 
+#set( $ownerIdToQuery = $ownerIdFromIdentity ) ## Default to the identified user's ID
+
+## --- Admin Override Logic (Optional - add if admins can query for other owners) ---
 #if( $context.identity.groups && $context.identity.groups.contains("Admin") )
   #if( $context.args.filter && $context.args.filter.owner && $context.args.filter.owner.eq && !$util.isNullOrEmpty($context.args.filter.owner.eq) )
-    #set( $logMsgAdmin = "STATUS_REQ_VTL_V10: Admin override. Setting ownerIdToQuery from filter: " + $context.args.filter.owner.eq )
-    $util.qr($ctx.log.info($logMsgAdmin))
-    #set( $ownerIdToQuery = $context.args.filter.owner.eq )
+    #set( $ownerFromFilter = $context.args.filter.owner.eq )
+    $util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Admin override. Setting ownerIdToQuery from filter: $ownerFromFilter"))
+    #set( $ownerIdToQuery = $ownerFromFilter )
   #else
-    #set( $logMsgAdminDefault = "STATUS_REQ_VTL_V10: Admin call, no owner filter. Defaulting to admin's own ID: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($logMsgAdminDefault))
+    ## Admin querying without a specific owner filter; defaults to their own ID or could be an error/all based on design.
+    ## Here, it will use the admin's own ID if $ownerIdFromIdentity was set.
+    $util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Admin call, no specific owner filter. Querying for: $ownerIdToQuery"))
   #end
 #else
-    #set( $logMsgNonAdmin = "STATUS_REQ_VTL_V10: Non-admin call. Using identity's ID: " + $ownerIdToQuery )
-    $util.qr($ctx.log.info($logMsgNonAdmin))
+    ## For non-admins, ownerIdToQuery remains ownerIdFromIdentity
+    $util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Non-admin call. Querying for: $ownerIdToQuery"))
 #end
 
+## --- Log the resolved ownerIdToQuery safely ---
 #set( $logResolvedOwnerId = "null_or_empty" )
 #if( !$util.isNullOrBlank($ownerIdToQuery) )
-  #set( $logResolvedOwnerId = $ownerIdToQuery )
+    #set( $logResolvedOwnerId = $ownerIdToQuery )
 #end
-$util.qr($ctx.log.info("STATUS_REQ_VTL_V10: Resolved ownerIdToQuery before validation = ${logResolvedOwnerId}"))
+$util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Resolved ownerIdToQuery before validation = $logResolvedOwnerId"))
 
+## --- Ensure ownerIdToQuery is not null or empty ---
 #if( $util.isNullOrEmpty($ownerIdToQuery) )
-  $util.error("Owner ID for query is null or empty. This should not happen if user is authenticated or admin provides a filter.", "InvalidRequestException")
+    $util.error("Owner ID for query is null or empty. User must be authenticated or an admin must provide a valid owner filter.", "InvalidRequestException")
 #end
 
-{
+## --- Construct the DynamoDB Query object ---
+#set( $queryObj = {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "byOwner",
+  "index": "byOwner", ## Assumes a GSI named 'byOwner' with 'owner' as the partition key
   "query": {
     "expression": "#ownerAttribute = :ownerValue",
     "expressionNames": {
       "#ownerAttribute": "owner"
     },
     "expressionValues": {
+      ## CRITICAL FIX: Use the determined $ownerIdToQuery, not $ctx.args.filter.owner.eq directly
       ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery)
     }
   },
   "limit": $limit
-  #if( $nextToken )
-  ,"nextToken": "$nextToken"
-  #end
-}
+})
+
+#if( $nextToken )
+  ## nextToken from $context.args is already a string or VTL null.
+  ## DynamoDB expects the NextToken string directly.
+  $util.qr($queryObj.put("nextToken", $nextToken))
+#end
+
+## Optional: If you want to add other filters for AccountStatus (e.g., filter by status value)
+## you would build a "filter" expression here, similar to your other list request VTLs,
+## and add any new ExpressionAttributeNames/Values to top-level maps in $queryObj.
+## For simplicity, this example focuses on the owner query.
+## If filters are added, ensure expressionNames and expressionValues are top-level in the final $queryObj.
+## For just a key condition, placing them within the "query" object is fine as per AppSync docs for Query.
+
+$util.qr($ctx.log.info("ListAccountStatusesByOwner.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+
+$util.toJson($queryObj)

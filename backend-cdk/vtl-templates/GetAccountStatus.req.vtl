@@ -1,0 +1,67 @@
+## Get Account Status Request Mapping Template
+
+#set( $limit = 1 ) ## For a "get" operation, we typically want only one item
+#set( $nextToken = $util.defaultIfNullOrBlank($context.args.nextToken, null) ) ## Included for completeness, though usually not used if limit is 1
+
+## --- Determine the owner ID to query (from user's identity) ---
+#set( $ownerIdFromIdentity = $util.defaultIfNullOrBlank($context.identity.claims.sub, null) )
+#if( $util.isNull($ownerIdFromIdentity) && !$util.isNull($context.identity.sub) )
+    $util.qr($ctx.log.info("GetAccountStatus.req.vtl: Falling back to context.identity.sub for ownerIdFromIdentity: ${context.identity.sub}"))
+    #set( $ownerIdFromIdentity = $context.identity.sub )
+#end
+
+#set( $ownerIdToQuery = $ownerIdFromIdentity ) ## Default to the identified user's ID
+
+## --- OPTIONAL: Admin Override Logic ---
+## Allows an Admin to get the account status for a specific owner if input.id is provided as the owner's ID.
+## Note: The GraphQL argument would need to be something like getAccountStatus(id: ID) where id is the ownerId for an admin.
+## If this resolver is purely for the logged-in user to get their own status, this section can be removed.
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  #if( $context.args.id && !$util.isNullOrBlank($context.args.id) ) ## Assuming admins might pass owner's ID via $context.args.id
+    #set( $ownerFromArgs = $context.args.id )
+    $util.qr($ctx.log.info("GetAccountStatus.req.vtl: Admin override. Setting ownerIdToQuery from argument 'id': $ownerFromArgs"))
+    #set( $ownerIdToQuery = $ownerFromArgs )
+  #else
+    $util.qr($ctx.log.info("GetAccountStatus.req.vtl: Admin call, no specific owner 'id' argument. Querying for admin's own status: $ownerIdToQuery"))
+  #end
+#else
+    ## For non-admins, ownerIdToQuery remains ownerIdFromIdentity
+    $util.qr($ctx.log.info("GetAccountStatus.req.vtl: Non-admin call. Querying for user's own status: $ownerIdToQuery"))
+#end
+
+## --- Log the resolved ownerIdToQuery safely ---
+#set( $logResolvedOwnerId = "null_or_empty" )
+#if( !$util.isNullOrBlank($ownerIdToQuery) )
+    #set( $logResolvedOwnerId = $ownerIdToQuery )
+#end
+$util.qr($ctx.log.info("GetAccountStatus.req.vtl: Resolved ownerIdToQuery before validation = $logResolvedOwnerId"))
+
+## --- Ensure ownerIdToQuery is not null or empty ---
+#if( $util.isNullOrEmpty($ownerIdToQuery) )
+    $util.error("Owner ID for query is null or empty. User must be authenticated or an Admin must provide a valid owner ID argument.", "InvalidRequestException")
+#end
+
+## --- Construct the DynamoDB Query object ---
+#set( $queryObj = {
+  "version": "2018-05-29",
+  "operation": "Query",
+  "index": "byOwner", ## Make sure this GSI exists with 'owner' as its partition key
+  "query": {
+    "expression": "#ownerAttribute = :ownerValue",
+    "expressionNames": {
+      "#ownerAttribute": "owner"
+    },
+    "expressionValues": {
+      ":ownerValue": $util.dynamodb.toDynamoDB($ownerIdToQuery)
+    }
+  },
+  "limit": $limit ## Set to 1 to fetch only one item
+})
+
+#if( $nextToken && $limit != 1 ) ## nextToken is only relevant if limit > 1, which is not typical for a "get"
+  $util.qr($queryObj.put("nextToken", $nextToken))
+#end
+
+$util.qr($ctx.log.info("GetAccountStatus.req.vtl: Final DynamoDB Query Object: $util.toJson($queryObj)"))
+
+$util.toJson($queryObj)

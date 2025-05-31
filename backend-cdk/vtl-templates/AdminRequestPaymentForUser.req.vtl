@@ -1,0 +1,43 @@
+## Admin Request Payment for User Request Mapping Template
+
+## Assuming your GraphQL mutation arguments are nested under an 'input' object.
+## If arguments like 'userId' and 'amount' are direct arguments to the mutation,
+## change to: #set( $input = $context.arguments )
+#set( $input = $context.arguments.input )
+
+## Log the raw input for debugging purposes
+$util.qr($ctx.log.info("AdminRequestPaymentForUser.req.vtl - Input arguments: $util.toJson($input)"))
+
+## Extract and validate individual fields from input
+#set( $userId = $input.userId )
+#if( $util.isNullOrBlank($userId) )
+  $util.error("Input 'userId' is required to request a payment.", "ValidationException")
+#end
+
+#set( $amount = $input.amount )
+#if( $util.isNull($amount) )
+  $util.error("Input 'amount' is required to request a payment.", "ValidationException")
+#end
+## Optional: Add more specific validation for amount if needed (e.g., must be a positive number)
+## #if( !($amount > 0) ) ## Example: only allow positive amounts
+##  $util.error("Input 'amount' must be a positive number.", "ValidationException")
+## #end
+
+#set( $adminSub = $context.identity.sub )
+#if( $util.isNullOrBlank($adminSub) )
+    $util.error("Admin identity (sub) is missing. Cannot determine requester.", "AuthenticationError")
+#end
+
+## Log the extracted and validated fields
+$util.qr($ctx.log.info("AdminRequestPaymentForUser.req.vtl - userId: $userId, amount: $amount, requestedBy (adminSub): $adminSub"))
+
+## Create the request payload for the Lambda function.
+## AppSync will convert this VTL map into a JSON object for the Lambda event.
+## VTL strings will become JSON strings, VTL numbers will become JSON numbers.
+{
+  "payload": { ## It's good practice to nest arguments under a "payload" key
+    "userId": "$userId",         ## userId will be a JSON string
+    "amount": $amount,           ## amount will be a JSON number (if $amount is a number in VTL)
+    "requestedByAdminSub": "$adminSub" ## admin's sub will be a JSON string
+  }
+}

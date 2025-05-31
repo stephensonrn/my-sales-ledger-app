@@ -1,0 +1,50 @@
+## Admin Create Account Status Response Mapping Template
+
+#if($ctx.error)
+    ## Handles errors from the Lambda invocation itself (e.g., timeout, permissions, Lambda crash)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+#set( $lambdaResult = $context.result ) ## Use a clear variable name for the Lambda's direct output
+
+## Log the raw result from the Lambda function for debugging purposes
+$util.qr($ctx.log.info("AdminCreateAccountStatus.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+
+## Check if the overall Lambda result is null
+#if( $util.isNull($lambdaResult) )
+    $util.error("No result returned from the Lambda function. Something went wrong.", "LambdaError")
+#end
+
+## Assuming the Lambda function returns the created AccountStatus object directly as its result.
+## If the Lambda nests it, e.g., { "accountStatus": { ... } }, you would extract it:
+## #set( $createdAccountStatus = $lambdaResult.accountStatus )
+## #if( $util.isNull($createdAccountStatus) )
+##   $util.error("AccountStatus data not found in Lambda response.", "ServerError")
+## #end
+## Then use $util.toJson($createdAccountStatus) below.
+
+## For this example, we'll assume $lambdaResult IS the created account status map.
+#set( $objectToReturn = $lambdaResult )
+
+## Return the created account status.
+## $util.toJson() will convert the $objectToReturn map into a valid JSON object.
+## AppSync will then map fields from this JSON object to your GraphQL AccountStatus type.
+$util.toJson($objectToReturn)
+
+## Alternatively, if you want to explicitly map fields (like your original template):
+## This is useful if you want to ensure only specific fields are returned,
+## or if the Lambda result structure isn't a direct match for your GraphQL type.
+#*
+#if($util.isNull($lambdaResult))
+    null ## Or $util.error("Failed to retrieve created account status details.", "ProcessingError")
+#else
+    #set($responseMap = {
+        "id": $lambdaResult.id,
+        "status": $lambdaResult.status,
+        "owner": $lambdaResult.owner
+        ## Include other fields like createdAt, updatedAt if they are part of $lambdaResult
+        ## and expected in your GraphQL AccountStatus type.
+    })
+    $util.toJson($responseMap)
+#end
+*#

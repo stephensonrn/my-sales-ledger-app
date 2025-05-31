@@ -1,0 +1,66 @@
+## Admin Add Cash Receipt Response Mapping Template
+
+#if($ctx.error)
+    ## Handles errors from the Lambda invocation itself (e.g., timeout, permissions, Lambda crash)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+#set( $lambdaResult = $context.result ) ## Use a clear variable name for the Lambda's direct output
+
+## Log the raw result from the Lambda function for debugging purposes
+$util.qr($ctx.log.info("AdminAddCashReceipt.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+
+## Check if the overall Lambda result is null (which might indicate an issue if Lambda was expected to return data)
+#if( $util.isNull($lambdaResult) )
+    $util.error("No result returned from the Lambda function. Something went wrong.", "LambdaError")
+#end
+
+## Option 1: Assuming $lambdaResult directly contains the fields needed for the response
+## and its structure matches or is a superset of the GraphQL return type.
+## If your GraphQL return type for AdminAddCashReceipt is, for example:
+## type CashReceiptStatus { id: ID!, amount: Float!, status: String! }
+## And $lambdaResult contains these fields directly.
+
+$util.toJson($lambdaResult)
+
+## Option 2: Explicitly map fields (closer to your original template, but made more robust)
+## This is useful if you want to strictly control the returned fields, rename them,
+## or if the Lambda result is nested or needs transformation.
+#*
+#if($ctx.error)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+#set( $lambdaResult = $context.result )
+$util.qr($ctx.log.info("AdminAddCashReceipt.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+
+#if( $util.isNull($lambdaResult) )
+    $util.error("No result returned from Lambda.", "LambdaError")
+#end
+
+## Example: If Lambda returns { "success": true, "data": { "id": "...", "amount": ..., "status": "..." } }
+## you might extract like this:
+## #if( !$lambdaResult.success )
+##   $util.error($lambdaResult.errorMessage, "LambdaOperationFailed")
+## #end
+## #set( $receiptData = $lambdaResult.data )
+## #if( $util.isNull($receiptData) )
+##   $util.error("Receipt data not found in Lambda response.", "ProcessingError")
+## #end
+
+## For this example, sticking to your original assumption that id, amount, status are top-level in $lambdaResult:
+#set( $responseMap = {
+    "id": $lambdaResult.id,
+    "amount": $lambdaResult.amount,
+    "status": $lambdaResult.status
+    ## Add any other fields from $lambdaResult that map to your GraphQL return type
+})
+
+## Validate that essential fields were present in the Lambda result if constructing explicitly
+#if( $util.isNull($responseMap.id) || $util.isNull($responseMap.amount) || $util.isNull($responseMap.status) )
+    $util.qr($ctx.log.error("AdminAddCashReceipt.res.vtl - Lambda result missing one or more expected fields (id, amount, status)."))
+    $util.error("Incomplete data received from processing service.", "ServerError")
+#end
+
+$util.toJson($responseMap)
+*#

@@ -3,54 +3,81 @@
 ## - Non-admins can only update their own account status (where input.id matches their sub).
 ## - Admins can update the account status for any user specified by input.id.
 
-#set( $targetId = $ctx.args.input.id )
+#set( $input = $ctx.args.input )
+#set( $targetId = $input.id )
 
+## Validate required input 'id'
 #if( $util.isNullOrBlank($targetId) )
   $util.error("Input 'id' is required to update an account status.", "ValidationException")
 #end
 
-## Define the update expression, names, and values
+## Validate required input 'totalUnapprovedInvoiceValue' (assuming it's always required for this update)
+#if( $util.isNull($input.totalUnapprovedInvoiceValue) )
+  $util.error("Input 'totalUnapprovedInvoiceValue' is required for an update.", "ValidationException")
+#end
+## If totalUnapprovedInvoiceValue could be zero, $util.isNull is fine. If it must be non-zero, adjust check.
+
+$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Input arguments: $util.toJson($input)"))
+$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Logged-in user sub: ${context.identity.sub}"))
+#if( $context.identity.groups && !$context.identity.groups.isEmpty() )
+    $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - User Groups: $util.toJson($context.identity.groups)"))
+#end
+
+## Initialize for building expressions
+#set( $expressionNames = {} )
+#set( $expressionValues = {} )
+
+## Define the static update expression parts for this specific mutation
 #set( $updateExpression = "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValueVal, #updatedAt = :updatedAtVal" )
-#set( $expressionNames = {
-  "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
-  "#updatedAt": "updatedAt"
-})
-#set( $expressionValues = {
-  ":totalUnapprovedInvoiceValueVal": $util.dynamodb.toDynamoDB($ctx.args.input.totalUnapprovedInvoiceValue),
-  ":updatedAtVal": $util.dynamodb.toDynamoDB($util.time.nowISO8601())
-})
+
+$util.qr($expressionNames.put("#totalUnapprovedInvoiceValue", "totalUnapprovedInvoiceValue"))
+$util.qr($expressionNames.put("#updatedAt", "updatedAt"))
+
+$util.qr($expressionValues.put(":totalUnapprovedInvoiceValueVal", $util.dynamodb.toDynamoDB($input.totalUnapprovedInvoiceValue)))
+$util.qr($expressionValues.put(":updatedAtVal", $util.dynamodb.toDynamoDB($util.time.nowISO8601())))
 
 ## Define the condition expression based on user role
 #set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
 
-#if( !($context.identity.groups && $context.identity.groups.contains("Admin")) )
+#set( $isAdmin = false )
+#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
+  #set( $isAdmin = true )
+#end
+
+#if( !$isAdmin )
   ## Non-admin user: Enforce that they are updating their own account status.
   ## Assumes 'id' of AccountStatus item IS the owner's sub.
+  $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Non-admin user. Adding owner/ID condition."))
   $util.qr($conditionExpressionParts.add("#itemIdCond = :loggedInUserSubCond"))
-  $util.qr($expressionNames.put("#itemIdCond", "id")) 
+  $util.qr($expressionNames.put("#itemIdCond", "id")) ## 'id' is the attribute name in DynamoDB
   $util.qr($expressionValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDB($context.identity.sub)))
 #else
-  ## Admin user: The base condition "attribute_exists(id)" is sufficient.
-  ## They are trusted to update the record specified by $targetId if it exists.
+  $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Admin user. Base condition 'attribute_exists(id)' applies."))
 #end
 
 #set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
+$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Final Condition Expression: $finalConditionExpression"))
 
-{
+## Construct the final DynamoDB request object
+#set( $dynamoDBRequest = {
   "version": "2018-05-29",
   "operation": "UpdateItem",
   "key": {
-    "id": $util.dynamodb.toDynamoDB($targetId) ## Using toDynamoDB
+    "id": $util.dynamodb.toDynamoDB($targetId)
   },
-  "update": {
-    "expression": $updateExpression,
-    "expressionNames": $expressionNames,
-    "expressionValues": $expressionValues
-  },
-  "condition": {
-    "expression": $finalConditionExpression
-    ## expressionNames and expressionValues for the condition are now part
-    ## of the main maps ($expressionNames, $expressionValues) used by the "update" block.
-    ## DynamoDB will use these for both.
-  }
-}
+  "updateExpression": $updateExpression,
+  "conditionExpression": $finalConditionExpression
+})
+
+## Add ExpressionAttributeNames and ExpressionAttributeValues if they are not empty
+## These are shared by both updateExpression and conditionExpression
+#if( !$expressionNames.isEmpty() )
+  $util.qr($dynamoDBRequest.put("expressionAttributeNames", $expressionNames))
+#end
+#if( !$expressionValues.isEmpty() )
+  $util.qr($dynamoDBRequest.put("expressionAttributeValues", $expressionValues))
+#end
+
+$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Final DynamoDB Request Object: $util.toJson($dynamoDBRequest)"))
+
+$util.toJson($dynamoDBRequest)

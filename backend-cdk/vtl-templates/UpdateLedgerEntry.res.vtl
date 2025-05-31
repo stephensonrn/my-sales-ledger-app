@@ -1,0 +1,18 @@
+## Update Ledger Entry Response Mapping Template 1715 31052025
+
+#if($ctx.error)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log the raw result from the data source for debugging
+#set( $logCtxResult = $util.toJson($ctx.result) )
+$util.qr($ctx.log.info("UpdateLedgerEntry.res.vtl - Raw result from data source: $logCtxResult"))
+
+## AppSync will automatically map the fields from $ctx.result if they match the GraphQL return type.
+## If you need specific transformations or to ensure only certain fields are returned,
+## you can explicitly build the object. Otherwise, $util.toJson($ctx.result) is often sufficient
+## if the $ctx.result directly matches your GraphQL type's structure.
+
+## Assuming your GraphQL return type for UpdateLedgerEntry (e.g., LedgerEntry)
+## has fields like id, owner, amount, description, timestamp:
+$util.toJson($ctx.result)

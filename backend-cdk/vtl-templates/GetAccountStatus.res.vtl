@@ -1,0 +1,26 @@
+## Get Account Status Response Mapping Template
+## (Adjusted for a Request Template using DynamoDB Query operation)
+
+#if($ctx.error)
+    ## If there was an error from the data source itself (e.g., DDB error)
+    $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Log the raw result from the Query operation for debugging
+#set( $logCtxResult = $util.toJson($ctx.result) )
+$util.qr($ctx.log.info("GetAccountStatus.res.vtl - Raw result from Query operation: $logCtxResult"))
+
+#set( $item = null ) ## Initialize item as null
+
+#if( !$util.isNull($ctx.result) && !$util.isNull($ctx.result.items) && !$ctx.result.items.isEmpty() )
+    ## If items array exists and is not empty, take the first item.
+    ## Since the request template used limit: 1, there should be at most one item.
+    #set( $item = $ctx.result.items[0] )
+#else
+    ## No items found by the Query operation
+    $util.qr($ctx.log.info("GetAccountStatus.res.vtl - No items found in result.items array."))
+#end
+
+## $item will now be the account status map, or null if not found.
+## $util.toJson() will correctly handle either case.
+$util.toJson($item)
