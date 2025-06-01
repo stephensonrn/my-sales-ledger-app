@@ -1,7 +1,6 @@
 // src/AdminPage.tsx
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { GRAPHQL_AUTH_MODE } from '@aws-amplify/api';
 import {
   Flex,
   Heading,
@@ -54,7 +53,7 @@ function AdminPage() {
           limit: USERS_PER_PAGE,
           nextToken: token
         },
-        authMode: GRAPHQL_AUTH_MODE.AMAZON_COGNITO_USER_POOLS
+        authMode: 'userPool'
       });
 
       if (response.errors) {
