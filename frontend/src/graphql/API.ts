@@ -57,7 +57,7 @@ export type AdminCreateLedgerEntryInput = {
 
 export type UpdateAccountStatusInput = {
   id: string,
-  totalUnapprovedInvoiceValue?: number | null,
+  totalUnapprovedInvoiceValue: number,
 };
 
 export type AccountStatus = {
@@ -71,8 +71,9 @@ export type AccountStatus = {
 };
 
 export type AdminCreateAccountStatusInput = {
-  ownerId: string,
+  accountId: string,
   initialUnapprovedInvoiceValue: number,
+  status: string,
 };
 
 export type AdminAddCashReceiptInput = {
@@ -141,22 +142,6 @@ export type LedgerEntryConnection = {
   nextToken?: string | null,
 };
 
-export type AccountStatusFilterInput = {
-  id?: ModelIDFilterInput | null,
-  owner?: ModelStringFilterInput | null,
-  totalUnapprovedInvoiceValue?: ModelFloatFilterInput | null,
-  createdAt?: ModelStringFilterInput | null,
-};
-
-export type ModelFloatFilterInput = {
-  eq?: number | null,
-  ne?: number | null,
-  gt?: number | null,
-  lt?: number | null,
-  ge?: number | null,
-  le?: number | null,
-};
-
 export type AccountStatusConnection = {
   __typename: "AccountStatusConnection",
   items?:  Array<AccountStatus | null > | null,
@@ -191,6 +176,10 @@ export type CognitoUser = {
   createdAt?: string | null,
   updatedAt?: string | null,
   attributes?:  Array<UserAttribute | null > | null,
+  id: string,
+  email?: string | null,
+  lastModifiedAt?: string | null,
+  groups?: Array< string | null > | null,
 };
 
 export type CreateLedgerEntryMutationVariables = {
@@ -396,9 +385,6 @@ export type GetAccountStatusQuery = {
 
 export type ListAccountStatusesQueryVariables = {
   owner?: string | null,
-  filter?: AccountStatusFilterInput | null,
-  limit?: number | null,
-  nextToken?: string | null,
 };
 
 export type ListAccountStatusesQuery = {
@@ -411,7 +397,6 @@ export type ListAccountStatusesQuery = {
       totalUnapprovedInvoiceValue: number,
       createdAt: string,
       updatedAt: string,
-      createdByAdmin?: string | null,
     } | null > | null,
     nextToken?: string | null,
   } | null,

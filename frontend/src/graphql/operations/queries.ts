@@ -66,17 +66,11 @@ export const getAccountStatus = /* GraphQL */ `query GetAccountStatus($id: ID!) 
   APITypes.GetAccountStatusQuery
 >;
 export const listAccountStatuses = /* GraphQL */ `query ListAccountStatuses(
-  $owner: String
   $filter: AccountStatusFilterInput
   $limit: Int
   $nextToken: String
 ) {
-  listAccountStatuses(
-    owner: $owner
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-  ) {
+  listAccountStatuses(filter: $filter, limit: $limit, nextToken: $nextToken) {
     items {
       id
       owner
@@ -140,8 +134,12 @@ export const listCurrentAccountTransactions = /* GraphQL */ `query ListCurrentAc
   APITypes.ListCurrentAccountTransactionsQueryVariables,
   APITypes.ListCurrentAccountTransactionsQuery
 >;
-export const adminListUsers = /* GraphQL */ `query AdminListUsers($limit: Int, $nextToken: String) {
-  adminListUsers(limit: $limit, nextToken: $nextToken) {
+export const adminListUsers = /* GraphQL */ `query AdminListUsers(
+  $limit: Int
+  $nextToken: String
+  $filter: UserFilterInput
+) {
+  adminListUsers(limit: $limit, nextToken: $nextToken, filter: $filter) {
     users {
       username
       sub
@@ -154,6 +152,10 @@ export const adminListUsers = /* GraphQL */ `query AdminListUsers($limit: Int, $
         value
         __typename
       }
+      id
+      email
+      lastModifiedAt
+      groups
       __typename
     }
     nextToken

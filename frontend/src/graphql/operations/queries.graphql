@@ -26,25 +26,19 @@ query GetAccountStatus($id: ID!) {
   }
 }
 
-query ListAccountStatuses(
-  $owner: String # This 'owner' arg might be redundant if filter.owner is used
-  $filter: AccountStatusFilterInput
-  $limit: Int
-  $nextToken: String
-) {
-  listAccountStatuses(
-    owner: $owner
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-  ) {
+query ListAccountStatuses($owner: String) {
+  listAccountStatuses(filter: { owner: { eq: $owner } }) {
     items {
-      ...AccountStatusFields
+      id
+      owner
+      totalUnapprovedInvoiceValue
+      createdAt
+      updatedAt
     }
     nextToken
-    __typename
   }
 }
+
 
 query GetCurrentAccountTransaction($id: ID!) {
   getCurrentAccountTransaction(id: $id) {
