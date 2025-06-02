@@ -1,28 +1,29 @@
 // src/AddCashReceiptForm.tsx
 import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { 
-    Button, 
-    TextField, 
-    Flex, 
-    Alert, 
-    View,
-    Heading 
+import {
+  Button,
+  TextField,
+  Flex,
+  Alert,
+  View,
+  Heading
 } from '@aws-amplify/ui-react';
 
-// Corrected imports from the single generated API file
-import { 
-    adminAddCashReceipt,
-    // Types needed by this component:
-    type AdminAddCashReceiptMutation,
-    type AdminAddCashReceiptInput, // Ensure your schema uses this input type for the mutation
-    type CurrentAccountTransaction 
-} from './graphql/API'; // Assuming API.ts is in src/graphql/
+// Import the mutation document from graphql/mutations
+import { adminAddCashReceipt as AdminAddCashReceiptDocument } from './graphql/mutations';
+
+// Import types from the generated API file
+import {
+  type AdminAddCashReceiptMutation,
+  type AdminAddCashReceiptInput,
+  type CurrentAccountTransaction
+} from './graphql/API';
 
 const client = generateClient();
 
 interface AddCashReceiptFormProps {
-  selectedTargetSub: string; 
+  selectedTargetSub: string;
   onCashReceiptAdded?: (newTransaction: CurrentAccountTransaction) => void;
 }
 
@@ -35,13 +36,13 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    
-    if (!selectedTargetSub) { 
-      setError('No target user selected. Please select a user first.'); 
+
+    if (!selectedTargetSub) {
+      setError('No target user selected. Please select a user first.');
       setSuccess(null);
-      return; 
+      return;
     }
-    
+
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       setError('Please enter a valid positive amount for the cash receipt.');
@@ -53,32 +54,31 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
     setError(null);
     setSuccess(null);
 
-    // Construct the input object for the mutation
     const mutationInput: AdminAddCashReceiptInput = {
-      targetOwnerId: selectedTargetSub, // Matches schema AdminAddCashReceiptInput
+      targetOwnerId: selectedTargetSub,
       amount: numericAmount,
-      description: description || undefined, // Send undefined if empty for optional field
+      description: description || undefined,
     };
 
     try {
       console.log("AddCashReceiptForm: Calling AdminAddCashReceipt with input:", mutationInput);
       const response = await client.graphql<AdminAddCashReceiptMutation>({
         query: AdminAddCashReceiptDocument,
-        variables: { input: mutationInput }, // Pass the input object
-        authMode: 'userPool' 
+        variables: { input: mutationInput },
+        authMode: 'userPool',
       });
 
       console.log("AddCashReceiptForm: Response from mutation:", response);
 
       if (response.errors && response.errors.length > 0) {
-        throw response.errors; 
+        throw response.errors;
       }
 
       const createdTransaction = response.data?.adminAddCashReceipt;
 
       if (createdTransaction) {
-        setSuccess(`Successfully added cash receipt (ID: ${createdTransaction.id}) for user ${selectedTargetSub.substring(0,8)}...`);
-        setAmount(''); 
+        setSuccess(`Successfully added cash receipt (ID: ${createdTransaction.id}) for user ${selectedTargetSub.substring(0, 8)}...`);
+        setAmount('');
         setDescription('');
         if (onCashReceiptAdded) {
           onCashReceiptAdded(createdTransaction as CurrentAccountTransaction);
@@ -90,9 +90,9 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
     } catch (err: any) {
       console.error("AddCashReceiptForm: Error adding cash receipt:", err);
       let errorMessages = 'An unknown error occurred.';
-      if (Array.isArray(err)) { 
+      if (Array.isArray(err)) {
         errorMessages = err.map((e: any) => e.message || 'GraphQL error').join(', ');
-      } else if (err.message) { 
+      } else if (err.message) {
         errorMessages = err.message;
       }
       setError(`Failed to add cash receipt: ${errorMessages}`);
@@ -100,41 +100,49 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
       setIsLoading(false);
     }
   };
- 
+
   if (!selectedTargetSub) {
-    // This is good defensive coding, though AdminPage should only render it when sub is present
     return <Alert variation="info">Please select a user to enable this form.</Alert>;
   }
 
   return (
     <View as="form" onSubmit={handleSubmit}>
       <Flex direction="column" gap="small">
-        <TextField 
-          label="Amount (£):" 
-          type="number" 
-          step="0.01" 
-          min="0.01" 
-          value={amount} 
-          onChange={(e) => setAmount(e.target.value)} 
-          required 
-          isDisabled={isLoading} 
+        <TextField
+          label="Amount (£):"
+          type="number"
+          step="0.01"
+          min="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          isDisabled={isLoading}
           placeholder="e.g., 50.00"
         />
-        <TextField 
-          label="Description (Optional):" 
-          type="text" 
-          value={description} 
-          onChange={(e) => setDescription(e.target.value)} 
-          isDisabled={isLoading} 
-          placeholder="e.g., Cash payment from customer" 
+        <TextField
+          label="Description (Optional):"
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          isDisabled={isLoading}
+          placeholder="e.g., Cash payment from customer"
         />
         <Button type="submit" isLoading={isLoading} variation="primary" marginTop="small">
           Add Cash Receipt
         </Button>
       </Flex>
-      {success && <Alert variation="success" isDismissible={true} onDismiss={() => setSuccess(null)} marginTop="small">{success}</Alert>}
-      {error && <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)} marginTop="small">{error}</Alert>}
+      {success && (
+        <Alert variation="success" isDismissible={true} onDismiss={() => setSuccess(null)} marginTop="small">
+          {success}
+        </Alert>
+      )}
+      {error && (
+        <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)} marginTop="small">
+          {error}
+        </Alert>
+      )}
     </View>
   );
 }
+
 export default AddCashReceiptForm;
