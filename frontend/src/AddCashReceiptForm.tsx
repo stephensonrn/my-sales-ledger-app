@@ -7,17 +7,18 @@ import {
   Flex,
   Alert,
   View,
-  Heading
+  Heading,
 } from '@aws-amplify/ui-react';
 
-// Import the mutation document from graphql/mutations
-import { adminAddCashReceipt as AdminAddCashReceiptDocument } from './graphql/mutations';
-
-// Import types from the generated API file
+// Correct imports from your generated files
 import {
-  type AdminAddCashReceiptMutation,
-  type AdminAddCashReceiptInput,
-  type CurrentAccountTransaction
+  adminAddCashReceipt, // GraphQL mutation document
+} from './graphql/operations/mutations';
+
+import type {
+  AdminAddCashReceiptMutation,
+  AdminAddCashReceiptInput,
+  CurrentAccountTransaction,
 } from './graphql/API';
 
 const client = generateClient();
@@ -61,14 +62,14 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
     };
 
     try {
-      console.log("AddCashReceiptForm: Calling AdminAddCashReceipt with input:", mutationInput);
+      console.log('AddCashReceiptForm: Calling AdminAddCashReceipt with input:', mutationInput);
       const response = await client.graphql<AdminAddCashReceiptMutation>({
-        query: AdminAddCashReceiptDocument,
+        query: adminAddCashReceipt,
         variables: { input: mutationInput },
         authMode: 'userPool',
       });
 
-      console.log("AddCashReceiptForm: Response from mutation:", response);
+      console.log('AddCashReceiptForm: Response from mutation:', response);
 
       if (response.errors && response.errors.length > 0) {
         throw response.errors;
@@ -84,11 +85,11 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
           onCashReceiptAdded(createdTransaction as CurrentAccountTransaction);
         }
       } else {
-        console.error("AddCashReceiptForm: Submission successful, but server did not return transaction data.", response.data);
-        setError("Submission processed, but could not confirm cash receipt details from the server.");
+        console.error('AddCashReceiptForm: Submission successful, but server did not return transaction data.', response.data);
+        setError('Submission processed, but could not confirm cash receipt details from the server.');
       }
     } catch (err: any) {
-      console.error("AddCashReceiptForm: Error adding cash receipt:", err);
+      console.error('AddCashReceiptForm: Error adding cash receipt:', err);
       let errorMessages = 'An unknown error occurred.';
       if (Array.isArray(err)) {
         errorMessages = err.map((e: any) => e.message || 'GraphQL error').join(', ');
