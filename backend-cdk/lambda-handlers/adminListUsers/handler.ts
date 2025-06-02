@@ -9,19 +9,23 @@ import {
   ListUsersCommandOutput,
   AdminListGroupsForUserCommand,
   AdminListGroupsForUserCommandInput,
-  UserType as CognitoSDKUserType, // Renamed to avoid conflict
+  UserType as CognitoSDKUserType,
   AttributeType,
-} from "@aws-sdk/client-cognito-identity-provider"; // SDK v3
+} from "@aws-sdk/client-cognito-identity-provider";
 
-// Assuming these types are defined in '../../types'
 interface UserAttributeGraphQL {
   name: string;
   value?: string | null;
 }
 
 type UserStatusType =
-  | "UNCONFIRMED" | "CONFIRMED" | "ARCHIVED" | "COMPROMISED"
-  | "UNKNOWN" | "RESET_REQUIRED" | "FORCE_CHANGE_PASSWORD";
+  | "UNCONFIRMED"
+  | "CONFIRMED"
+  | "ARCHIVED"
+  | "COMPROMISED"
+  | "UNKNOWN"
+  | "RESET_REQUIRED"
+  | "FORCE_CHANGE_PASSWORD";
 
 interface CognitoUserGraphQL {
   id: string;
@@ -42,7 +46,6 @@ interface AdminListUsersLambdaResponse {
   nextToken?: string | null;
 }
 
-// Your utility function
 import { isAdmin } from "../../utils/auth";
 
 const cognitoClient = new CognitoIdentityProviderClient({});
@@ -56,10 +59,10 @@ async function listUsersFromCognito(
   userPoolId: string,
   limit?: number,
   nextToken?: string,
-  filterString?: string // Cognito ListUsers API Filter string
-): Promise<ListUsersCommandOutput> { // Returns the direct SDK output
+  filterString?: string
+): Promise<ListUsersCommandOutput> {
   console.log(`listUsersFromCognito called with: limit=${limit}, nextToken=${nextToken}, filter=${filterString}`);
-  
+
   const params: ListUsersCommandInput = {
     UserPoolId: userPoolId,
     Limit: limit,
@@ -89,12 +92,12 @@ async function getGroupsForUser(userPoolId: string, username: string): Promise<s
     return data.Groups?.map(g => g.GroupName!).filter(Boolean) ?? [];
   } catch (error) {
     console.error(`Error fetching groups for user ${username}:`, error);
-    return []; // Return empty on error or handle as needed
+    return [];
   }
 }
 
 export const handler = async (
-  event: AppSyncResolverEvent<{ limit?: number; nextToken?: string; filter?: any }, any> // More specific input type
+  event: AppSyncResolverEvent<{ limit?: number; nextToken?: string; filter?: any }, any>
 ): Promise<AdminListUsersLambdaResponse> => {
   console.log("LAMBDA EVENT (adminListUsers):", JSON.stringify(event, null, 2));
 
@@ -112,28 +115,21 @@ export const handler = async (
     throw new Error("Configuration error: User Pool ID is missing.");
   }
 
-  const args = event.arguments?.payload || event.arguments || {}; // Handle if payload wrapper isn't used or direct args
+  // Changed here: use event.arguments directly (no .payload)
+  const args = event.arguments || {};
   const limit = args.limit;
   const nextTokenArg = args.nextToken;
-  
-  // Construct Cognito Filter string from args.filter (this is complex and specific to your filter needs)
-  // Example: if args.filter is { usernamePrefix: "test" }, translate to `username ^= "test"`
-  // For now, passing filter directly if your VTL still sends it as a map; SDK expects a string.
-  // This part likely needs adjustment based on how your VTL sends 'filter' and how Cognito API expects it.
-  // If filter is an object from VTL: you'd need to build the Cognito filter string.
-  // If VTL sends a pre-formatted string, use that. For now, assume filter is not directly usable or not implemented.
+
+  // Build filter string from filter object if needed
   let cognitoFilterString: string | undefined = undefined;
-  if (args.filter && typeof args.filter === 'object') {
-    // Example: simple username prefix filter if filter = { usernamePrefix: "..." }
+  if (args.filter && typeof args.filter === "object") {
     if (args.filter.username && args.filter.username.beginsWith) {
-        cognitoFilterString = `username ^= "${args.filter.username.beginsWith}"`;
+      cognitoFilterString = `username ^= "${args.filter.username.beginsWith}"`;
     } else if (args.filter.email && args.filter.email.eq) {
-        cognitoFilterString = `email = "${args.filter.email.eq}"`;
+      cognitoFilterString = `email = "${args.filter.email.eq}"`;
     }
-    // Add more complex filter string construction based on args.filter structure
     console.log("Constructed Cognito Filter String:", cognitoFilterString);
   }
-
 
   console.log(`Lambda called with limit: ${limit}, nextToken: ${nextTokenArg}, Cognito filter: ${cognitoFilterString}`);
 
@@ -147,8 +143,8 @@ export const handler = async (
       const attributes = cognitoUser.Attributes || [];
       const sub = getAttrValue(attributes, "sub") ?? cognitoUser.Username;
       const email = getAttrValue(attributes, "email");
-      
-      const groups = await getGroupsForUser(userPoolId, cognitoUser.Username); // Call for each user
+
+      const groups = await getGroupsForUser(userPoolId, cognitoUser.Username);
 
       mappedUsers.push({
         id: sub,
@@ -162,19 +158,19 @@ export const handler = async (
         lastModifiedAt: cognitoUser.UserLastModifiedDate?.toISOString() ?? undefined,
         groups: groups.length > 0 ? groups : undefined,
         attributes: attributes
-          .filter(attr => attr.Name !== undefined)
-          .map(attr => ({
+          .filter((attr) => attr.Name !== undefined)
+          .map((attr) => ({
             name: attr.Name!,
             value: attr.Value ?? null,
           })),
       });
     }
   }
-  
+
   console.log("LAMBDA MAPPED USERS (adminListUsers) count:", mappedUsers.length);
 
-return {
-  users: mappedUsers,
-  nextToken: cognitoResponse.PaginationToken || null,
-};
+  return {
+    users: mappedUsers,
+    nextToken: cognitoResponse.PaginationToken || null,
+  };
 };
