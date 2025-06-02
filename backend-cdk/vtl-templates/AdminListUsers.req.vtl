@@ -1,36 +1,36 @@
-## Admin List Users Request Mapping Template
-
-## Assuming your GraphQL query arguments (limit, nextToken, filter) are top-level.
-## If they are nested under an 'input' object (e.g., adminListUsers(input: ListUsersInput)),
-## change the next line to: #set( $gqlArgs = $context.arguments.input )
 #set( $gqlArgs = $context.arguments )
-
-## Log the raw input arguments for debugging purposes
 $util.qr($ctx.log.info("AdminListUsers.req.vtl - Input arguments: $util.toJson($gqlArgs)"))
 
-## Prepare the query parameters for the Lambda
-#set( $limit = $util.defaultIfNull($gqlArgs.limit, 10) )  ## Default to 10 users if no limit is provided
-#set( $nextToken = $util.defaultIfNullOrBlank($gqlArgs.nextToken, null) )  ## Handle pagination with nextToken
+#set( $limit = $util.defaultIfNull($gqlArgs.limit, 10) )
+#set( $rawNextToken = $util.defaultIfNullOrBlank($gqlArgs.nextToken, null) )
+#set( $filterValue = $gqlArgs.filter )
 
-## Handle the filter object. It will be passed as is (could be a map or null).
-#set( $filter = $gqlArgs.filter )
-#if( !$util.isNull($filter) )
-    $util.qr($ctx.log.info("AdminListUsers.req.vtl - Filter provided: $util.toJson($filter)"))
+#if( !$util.isNull($filterValue) )
+  $util.qr($ctx.log.info("AdminListUsers.req.vtl - Filter provided: $util.toJson($filterValue)"))
 #else
-    $util.qr($ctx.log.info("AdminListUsers.req.vtl - No filter provided."))
+  $util.qr($ctx.log.info("AdminListUsers.req.vtl - No filter provided."))
 #end
 
-## Optional: Add validation for limit if necessary (e.g., ensure it's within a valid range)
-## #if( $limit <= 0 || $limit > 100 )
-##   $util.error("Limit must be between 1 and 100.", "ValidationException")
-## #end
+#set( $payloadMap = {
+  "limit": $limit,
+  "identity": $context.identity
+})
 
-## Create the request payload for the Lambda function.
-## AppSync will convert this VTL map into a JSON object for the Lambda event.
-{
-  "payload": { ## It's good practice to nest arguments under a "payload" key
-    "limit": $limit,            ## Will be a JSON number
-    "nextToken": $nextToken,    ## Will be a JSON string or JSON null
-    "filter": $util.toJson($filter) ## Ensures filter is passed as valid JSON (object or null)
-  }
-}
+#if( !$util.isNull($rawNextToken) )
+  $util.qr($payloadMap.put("nextToken", "$rawNextToken"))
+#else
+  $util.qr($payloadMap.put("nextToken", $null))
+#end
+
+#if( !$util.isNull($filterValue) )
+  $util.qr($payloadMap.put("filter", $filterValue))
+#else
+  $util.qr($payloadMap.put("filter", $null))
+#end
+
+## 💡 CRITICAL FIX — wrap entire final object with $util.toJson
+$util.toJson({
+  "version": "2017-02-28",
+  "operation": "Invoke",
+  "payload": $payloadMap
+})

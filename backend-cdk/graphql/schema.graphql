@@ -1,4 +1,6 @@
-# Schema for Sales Ledger Application - Updated
+# -------------------------------
+# Sales Ledger GraphQL Schema
+# -------------------------------
 
 # --- Enums ---
 enum LedgerEntryType {
@@ -6,7 +8,7 @@ enum LedgerEntryType {
   CREDIT_NOTE
   INCREASE_ADJUSTMENT
   DECREASE_ADJUSTMENT
-  CASH_RECEIPT # Note: This type is used by LedgerEntry but created by adminAddCashReceipt for CurrentAccountTransaction
+  CASH_RECEIPT
 }
 
 enum CurrentAccountTransactionType {
@@ -14,36 +16,36 @@ enum CurrentAccountTransactionType {
   CASH_RECEIPT
 }
 
-# --- Object Types (Your Data Models) ---
+# --- Data Models ---
 type LedgerEntry {
   id: ID!
-  owner: String! # Cognito User Sub ID
+  owner: String!
   type: LedgerEntryType!
   amount: Float!
   description: String
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String # Optional: ID of admin if created by admin
+  createdByAdmin: String
 }
 
 type AccountStatus {
-  id: ID! # Typically the owner's Cognito User Sub ID
-  owner: String! # Cognito User Sub ID
+  id: ID!
+  owner: String!
   totalUnapprovedInvoiceValue: Float!
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String # Optional: ID of admin if created/updated by admin
+  createdByAdmin: String
 }
 
 type CurrentAccountTransaction {
   id: ID!
-  owner: String! # Cognito User Sub ID
+  owner: String!
   type: CurrentAccountTransactionType!
   amount: Float!
   description: String
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String # Optional: ID of admin if created by admin
+  createdByAdmin: String
 }
 
 type UserAttribute {
@@ -58,17 +60,20 @@ type CognitoUser {
   enabled: Boolean
   createdAt: AWSDateTime
   updatedAt: AWSDateTime
+  id: ID!
+  email: String
+  lastModifiedAt: AWSDateTime
+  groups: [String]
   attributes: [UserAttribute]
 }
 
-# --- NEW: Structured Result Type for Admin Payment Request ---
+# --- Structured Response Types ---
 type AdminPaymentRequestResult {
   success: Boolean!
   message: String
-  transactionId: ID # Optional ID of a transaction created (e.g., PAYMENT_REQUEST in CurrentAccountTransactionTable)
+  transactionId: ID
 }
 
-# --- Connection Types for List Operations ---
 type LedgerEntryConnection {
   items: [LedgerEntry]
   nextToken: String
@@ -89,7 +94,7 @@ type UserListResult {
   nextToken: String
 }
 
-# --- Input Types for Mutations ---
+# --- Input Types ---
 input CreateLedgerEntryInput {
   type: LedgerEntryType!
   amount: Float!
@@ -104,46 +109,40 @@ input UpdateLedgerEntryInput {
 }
 
 input UpdateAccountStatusInput {
-  id: ID! # Should be the ID (sub) of the user whose status is being updated
-  totalUnapprovedInvoiceValue: Float # Made non-optional based on common use case
+  id: ID!
+  totalUnapprovedInvoiceValue: Float!
 }
 
-# --- Input Type for Admin Creating Ledger Entry for a User ---
 input AdminCreateLedgerEntryInput {
   type: LedgerEntryType!
   amount: Float!
   description: String
-  targetUserId: ID! # The user for whom this entry is being created
+  targetUserId: ID!
 }
 
-# --- Input Type for Admin Requesting Payment for a User ---
 input AdminRequestPaymentForUserInput {
   targetUserId: ID!
   amount: Float!
-  paymentDescription: String # Example of an additional field
+  paymentDescription: String
 }
 
-# --- NEW: Input Type for sendPaymentRequestEmail ---
 input SendPaymentRequestInput {
   amount: Float!
-  # Add other fields if needed in the future
 }
 
-# --- NEW: Input Type for adminCreateAccountStatus ---
 input AdminCreateAccountStatusInput {
-  ownerId: ID! # Changed from String! to ID! for consistency
-  initialUnapprovedInvoiceValue: Float! # Made non-optional
+  accountId: ID!
+  initialUnapprovedInvoiceValue: Float!
+  status: String!
 }
 
-# --- NEW: Input Type for adminAddCashReceipt ---
 input AdminAddCashReceiptInput {
-  targetOwnerId: ID! # Changed from String! to ID!
+  targetOwnerId: ID!
   amount: Float!
   description: String
 }
 
-
-# --- Input Types for Query Filters (Enhanced ModelStringFilterInput) ---
+# --- Filter Inputs ---
 input ModelStringFilterInput {
   eq: String
   ne: String
@@ -153,7 +152,7 @@ input ModelStringFilterInput {
   gt: String
   contains: String
   notContains: String
-  between: [String] # Array of two strings for date/string range
+  between: [String]
   beginsWith: String
 }
 
@@ -173,46 +172,65 @@ input ModelFloatFilterInput {
 
 input LedgerEntryFilterInput {
   id: ModelIDFilterInput
-  owner: ModelStringFilterInput 
-  type: ModelStringFilterInput # Can now filter by LedgerEntryType string value
-  createdAt: ModelStringFilterInput # Now supports range queries via 'between', 'gt', etc.
+  owner: ModelStringFilterInput
+  type: ModelStringFilterInput
+  createdAt: ModelStringFilterInput
 }
 
 input AccountStatusFilterInput {
   id: ModelIDFilterInput
   owner: ModelStringFilterInput
   totalUnapprovedInvoiceValue: ModelFloatFilterInput
-  createdAt: ModelStringFilterInput # Added for consistency if needed
+  createdAt: ModelStringFilterInput
 }
 
 input CurrentAccountTransactionFilterInput {
   id: ModelIDFilterInput
   owner: ModelStringFilterInput
-  type: ModelStringFilterInput # Can now filter by CurrentAccountTransactionType string value
-  createdAt: ModelStringFilterInput # Now supports range queries
+  type: ModelStringFilterInput
+  createdAt: ModelStringFilterInput
 }
 
+input UserFilterInput {
+  username: ModelStringFilterInput
+  email: ModelStringFilterInput
+  status: ModelStringFilterInput
+}
 
-# --- Query Type ---
+# --- Queries ---
 type Query @aws_cognito_user_pools {
 
   getLedgerEntry(id: ID!): LedgerEntry
-  listLedgerEntries(filter: LedgerEntryFilterInput, limit: Int, nextToken: String): LedgerEntryConnection
+  listLedgerEntries(
+    filter: LedgerEntryFilterInput
+    limit: Int
+    nextToken: String
+  ): LedgerEntryConnection
 
-  getAccountStatus(id: ID!): AccountStatus 
-  listAccountStatuses(owner: String, filter: AccountStatusFilterInput, limit: Int, nextToken: String): AccountStatusConnection
+  getAccountStatus(id: ID!): AccountStatus
+  listAccountStatuses(
+    filter: AccountStatusFilterInput
+    limit: Int
+    nextToken: String
+  ): AccountStatusConnection
 
   getCurrentAccountTransaction(id: ID!): CurrentAccountTransaction
-  listCurrentAccountTransactions(filter: CurrentAccountTransactionFilterInput, limit: Int, nextToken: String): CurrentAccountTransactionConnection
+  listCurrentAccountTransactions(
+    filter: CurrentAccountTransactionFilterInput
+    limit: Int
+    nextToken: String
+  ): CurrentAccountTransactionConnection
 
-  adminListUsers(limit: Int, nextToken: String): UserListResult
-    @aws_auth(cognito_groups: ["Admin"])
+  adminListUsers(
+    limit: Int
+    nextToken: String
+    filter: UserFilterInput
+  ): UserListResult @aws_auth(cognito_groups: ["Admin"])
 }
 
-# --- Mutation Type ---
+# --- Mutations ---
 type Mutation @aws_cognito_user_pools {
 
-  # LedgerEntry mutations
   createLedgerEntry(input: CreateLedgerEntryInput!): LedgerEntry
   updateLedgerEntry(input: UpdateLedgerEntryInput!): LedgerEntry
   deleteLedgerEntry(id: ID!): LedgerEntry
@@ -220,24 +238,20 @@ type Mutation @aws_cognito_user_pools {
   adminCreateLedgerEntry(input: AdminCreateLedgerEntryInput!): LedgerEntry
     @aws_auth(cognito_groups: ["Admin"])
 
-  # AccountStatus Mutations
   updateAccountStatus(input: UpdateAccountStatusInput!): AccountStatus
-    @aws_auth(cognito_groups: ["Admin"])
-  adminCreateAccountStatus(input: AdminCreateAccountStatusInput!): AccountStatus # Changed to use input type
-    @aws_auth(cognito_groups: ["Admin"])
-
-  # CurrentAccountTransaction Admin Mutation
-  adminAddCashReceipt(input: AdminAddCashReceiptInput!): CurrentAccountTransaction # Changed to use input type
+  adminCreateAccountStatus(input: AdminCreateAccountStatusInput!): AccountStatus
     @aws_auth(cognito_groups: ["Admin"])
 
-  # Payment Request Mutations
-  sendPaymentRequestEmail(input: SendPaymentRequestInput!): String # Changed to use input type
-  adminRequestPaymentForUser(input: AdminRequestPaymentForUserInput!): AdminPaymentRequestResult # Changed return type
+  adminAddCashReceipt(input: AdminAddCashReceiptInput!): CurrentAccountTransaction
+    @aws_auth(cognito_groups: ["Admin"])
+
+  sendPaymentRequestEmail(input: SendPaymentRequestInput!): String
+  adminRequestPaymentForUser(input: AdminRequestPaymentForUserInput!): AdminPaymentRequestResult
     @aws_auth(cognito_groups: ["Admin"])
 }
 
-# --- Subscription Type ---
-type Subscription @aws_cognito_user_pools { 
+# --- Subscriptions ---
+type Subscription @aws_cognito_user_pools {
   onCreateLedgerEntry(owner: String): LedgerEntry
     @aws_subscribe(mutations: ["createLedgerEntry", "adminCreateLedgerEntry"])
 }

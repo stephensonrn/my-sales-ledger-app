@@ -1,83 +1,65 @@
-## VTL Request Template for Mutation.updateAccountStatus
-## Updates an account status item.
-## - Non-admins can only update their own account status (where input.id matches their sub).
-## - Admins can update the account status for any user specified by input.id.
-
+## [UpdateAccountStatus.req.vtl]
+## Extract input and get current timestamp
 #set( $input = $ctx.args.input )
-#set( $targetId = $input.id )
+#set( $id = $input.id )
+#set( $now = $util.time.nowISO8601() )
 
-## Validate required input 'id'
-#if( $util.isNullOrBlank($targetId) )
-  $util.error("Input 'id' is required to update an account status.", "ValidationException")
-#end
-
-## Validate required input 'totalUnapprovedInvoiceValue' (assuming it's always required for this update)
-#if( $util.isNull($input.totalUnapprovedInvoiceValue) )
-  $util.error("Input 'totalUnapprovedInvoiceValue' is required for an update.", "ValidationException")
-#end
-## If totalUnapprovedInvoiceValue could be zero, $util.isNull is fine. If it must be non-zero, adjust check.
-
-$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Input arguments: $util.toJson($input)"))
-$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Logged-in user sub: ${context.identity.sub}"))
-#if( $context.identity.groups && !$context.identity.groups.isEmpty() )
-    $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - User Groups: $util.toJson($context.identity.groups)"))
-#end
-
-## Initialize for building expressions
-#set( $expressionNames = {} )
-#set( $expressionValues = {} )
-
-## Define the static update expression parts for this specific mutation
-#set( $updateExpression = "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValueVal, #updatedAt = :updatedAtVal" )
-
-$util.qr($expressionNames.put("#totalUnapprovedInvoiceValue", "totalUnapprovedInvoiceValue"))
-$util.qr($expressionNames.put("#updatedAt", "updatedAt"))
-
-$util.qr($expressionValues.put(":totalUnapprovedInvoiceValueVal", $util.dynamodb.toDynamoDB($input.totalUnapprovedInvoiceValue)))
-$util.qr($expressionValues.put(":updatedAtVal", $util.dynamodb.toDynamoDB($util.time.nowISO8601())))
-
-## Define the condition expression based on user role
-#set( $conditionExpressionParts = ["attribute_exists(id)"] ) ## Base condition: item must exist
-
-#set( $isAdmin = false )
-#if( $context.identity.groups && $context.identity.groups.contains("Admin") )
-  #set( $isAdmin = true )
-#end
-
-#if( !$isAdmin )
-  ## Non-admin user: Enforce that they are updating their own account status.
-  ## Assumes 'id' of AccountStatus item IS the owner's sub.
-  $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Non-admin user. Adding owner/ID condition."))
-  $util.qr($conditionExpressionParts.add("#itemIdCond = :loggedInUserSubCond"))
-  $util.qr($expressionNames.put("#itemIdCond", "id"))
-  $util.qr($expressionValues.put(":loggedInUserSubCond", $util.dynamodb.toDynamoDB($context.identity.sub)))
-#else
-  $util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Admin user. Base condition 'attribute_exists(id)' applies."))
-#end
-
-#set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
-$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Final Condition Expression: $finalConditionExpression"))
-
-## Construct the final DynamoDB request object
-#set( $dynamoDBRequest = {
+## Set up key and update expressions
+{
   "version": "2018-05-29",
   "operation": "UpdateItem",
   "key": {
-    "id": $util.dynamodb.toDynamoDB($targetId)
+    "id": $util.dynamodb.toDynamoDB($id)
   },
-  "updateExpression": $updateExpression,
-  "conditionExpression": $finalConditionExpression
-})
+  "update": {
+    "expression": "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValueVal, #updatedAt = :updatedAtVal",
+    "expressionNames": {
+      "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
+      "#updatedAt": "updatedAt"
+    },
+    "expressionValues": {
+      ":totalUnapprovedInvoiceValueVal": {
+        "N": "$input.totalUnapprovedInvoiceValue"
+      },
+      ":updatedAtVal": {
+        "S": "$now"
+      }
+    }
+  },
 
-## Add ExpressionAttributeNames and ExpressionAttributeValues if they are not empty
-## These are shared by both updateExpression and conditionExpression
-#if( !$expressionNames.isEmpty() )
-  $util.qr($dynamoDBRequest.put("expressionAttributeNames", $expressionNames))
-#end
-#if( !$expressionValues.isEmpty() )
-  $util.qr($dynamoDBRequest.put("expressionAttributeValues", $expressionValues))
-#end
+  ## Construct condition block
+  #set( $conditionExpressionParts = [] )
+  #set( $conditionExpressionNames = {} )
+  #set( $conditionExpressionValues = {} )
 
-$util.qr($ctx.log.info("UpdateAccountStatus.req.vtl - Final DynamoDB Request Object: $util.toJson($dynamoDBRequest)"))
+  ## Always require the item to exist
+  $util.qr($conditionExpressionParts.add("attribute_exists(#id)"))
+  $util.qr($conditionExpressionNames.put("#id", "id"))
 
-$util.toJson($dynamoDBRequest)
+  ## Optional: enforce that non-admin users can only update their own items
+  #set( $isAdmin = $util.defaultIfNull($ctx.identity.claims.get("cognito:groups"), []).contains("Admin") )
+  #if ( !$isAdmin )
+    ## Ensure your table has an "owner" attribute (usually the user's sub)
+    $util.qr($ctx.log.info("Non-admin user detected: enforcing ownership restriction"))
+    $util.qr($conditionExpressionParts.add("#owner = :ownerSub"))
+    $util.qr($conditionExpressionNames.put("#owner", "owner"))
+    $util.qr($conditionExpressionValues.put(":ownerSub", $util.dynamodb.toDynamoDB($ctx.identity.sub)))
+  #else
+    $util.qr($ctx.log.info("Admin user detected: no ownership restriction"))
+  #end
+
+  ## Log for debugging
+  $util.qr($ctx.log.info("Condition expression parts: $util.toJson($conditionExpressionParts)"))
+
+  ## Finalize condition expression
+  #set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
+  #if( !$finalConditionExpression )
+    $util.error("Condition expression is empty or null. This should never happen.", "ValidationException")
+  #end
+
+  "condition": {
+    "expression": "$finalConditionExpression",
+    "expressionNames": $conditionExpressionNames,
+    "expressionValues": $conditionExpressionValues
+  }
+}
