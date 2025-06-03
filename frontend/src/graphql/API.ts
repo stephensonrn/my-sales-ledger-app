@@ -96,6 +96,9 @@ export type CurrentAccountTransaction = {
 
 export type SendPaymentRequestInput = {
   amount: number,
+  toEmail: string,
+  subject: string,
+  body: string,
 };
 
 export type AdminRequestPaymentForUserInput = {
