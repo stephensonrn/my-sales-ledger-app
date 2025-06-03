@@ -4,71 +4,67 @@ import { generateClient } from 'aws-amplify/api';
 import { getCurrentUser } from 'aws-amplify/auth';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 
-// --- CORRECTED IMPORTS: Split for Types and Operation Documents ---
 // Operation Documents from src/graphql/operations/
-import { 
-    listLedgerEntries, 
-    listAccountStatuses, 
-    listCurrentAccountTransactions 
-} from './graphql/operations/queries'; 
-import { 
-    createLedgerEntry, 
+import {
+    listLedgerEntries,
+    listAccountStatuses,
+    listCurrentAccountTransactions
+} from './graphql/operations/queries';
+import {
+    createLedgerEntry,
     adminCreateLedgerEntry,
     sendPaymentRequestEmail,
     adminRequestPaymentForUser,
-    // Assuming your updateLedgerEntry & deleteLedgerEntry documents are also here
-    updateLedgerEntry, 
-    deleteLedgerEntry 
+    updateLedgerEntry,
+    deleteLedgerEntry
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 
 // Types from src/graphql/API.ts
 import {
-    LedgerEntryType, 
+    LedgerEntryType,
     CurrentAccountTransactionType,
-    // All type definitions:
     type LedgerEntry,
     type AccountStatus,
     type CurrentAccountTransaction,
     type CreateLedgerEntryInput,
-    type UpdateLedgerEntryInput, // Added if used
-    type DeleteLedgerEntryMutationVariables, // Added if used
+    type UpdateLedgerEntryInput,
+    type DeleteLedgerEntryMutationVariables,
     type AdminCreateLedgerEntryInput,
     type AdminRequestPaymentForUserInput,
-    type SendPaymentRequestInput, 
+    type SendPaymentRequestInput, // Ensure this type includes toEmail, subject, body
     type OnCreateLedgerEntrySubscription,
     type OnCreateLedgerEntrySubscriptionVariables,
     type ListLedgerEntriesQuery,
     type ListAccountStatusesQuery,
     type ListCurrentAccountTransactionsQuery,
     type CreateLedgerEntryMutation,
-    type UpdateLedgerEntryMutation, // Added if used
-    type DeleteLedgerEntryMutation, // Added if used
+    type UpdateLedgerEntryMutation,
+    type DeleteLedgerEntryMutation,
     type AdminCreateLedgerEntryMutation,
     type SendPaymentRequestEmailMutation,
     type AdminRequestPaymentForUserMutation,
-    type AdminPaymentRequestResult 
-} from './graphql/API'; 
-// --- END CORRECTED IMPORTS ---
+    type AdminPaymentRequestResult
+} from './graphql/API';
 
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
+import { Loader, Text, Alert, View, Flex, Heading } from '@aws-amplify/ui-react'; // Added Flex and Heading here
 
 const client = generateClient();
 const ADVANCE_RATE = 0.90;
 
 interface SalesLedgerProps {
-  targetUserId?: string | null; 
-  isAdmin?: boolean;            
+  targetUserId?: string | null;
+  isAdmin?: boolean;
 }
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(null);
-  const [userIdForData, setUserIdForData] = useState<string | null>(null);   
+  const [userIdForData, setUserIdForData] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -121,11 +117,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       setEntries([]);
       setAccountStatus(null);
       setCurrentAccountTransactions([]);
-      setLoadingEntries(false); 
+      setLoadingEntries(false);
       setLoadingStatus(false);
       setLoadingTransactions(false);
     } else {
-      setUserIdForData(null); 
+      setUserIdForData(null);
     }
   }, [isAdmin, targetUserId, loggedInUserSub]);
 
@@ -134,7 +130,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialEntries for user:", idToFetch);
     try {
       const response = await client.graphql<ListLedgerEntriesQuery>({
-        query: listLedgerEntries, // Use imported document
+        query: listLedgerEntries,
         variables: { filter: { owner: { eq: idToFetch } } },
         authMode: 'userPool'
       });
@@ -147,14 +143,14 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching ledger history.';
       setError(`Ledger history error: ${errorMessages}`); setEntries([]);
     } finally { setLoadingEntries(false); }
-  }, []); 
+  }, []);
 
   const fetchInitialStatus = useCallback(async (idToFetch: string) => {
     setLoadingStatus(true); setError(null);
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialStatus for user:", idToFetch);
     try {
       const response = await client.graphql<ListAccountStatusesQuery>({
-        query: listAccountStatuses, // Use imported document
+        query: listAccountStatuses,
         variables: { filter: { owner: { eq: idToFetch } }, limit: 1 },
         authMode: 'userPool'
       });
@@ -174,7 +170,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialTransactions for user:", idToFetch);
     try {
       const response = await client.graphql<ListCurrentAccountTransactionsQuery>({
-        query: listCurrentAccountTransactions, // Use imported document
+        query: listCurrentAccountTransactions,
         variables: { filter: { owner: { eq: idToFetch } } },
         authMode: 'userPool'
       });
@@ -195,7 +191,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       setLoadingEntries(true);
       setLoadingStatus(true);
       setLoadingTransactions(true);
-      setError(null); 
+      setError(null);
 
       fetchInitialEntries(userIdForData);
       fetchInitialStatus(userIdForData);
@@ -218,19 +214,19 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         return;
     }
     console.log("SalesLedger: Setting up subscription for owner:", userIdForData);
-    const clientInstance = generateClient(); 
+    const clientInstance = generateClient();
     const sub = clientInstance.graphql<ObservableSubscription<OnCreateLedgerEntrySubscription, OnCreateLedgerEntrySubscriptionVariables>>({
-      query: onCreateLedgerEntry, // Use imported document
+      query: onCreateLedgerEntry,
       variables: { owner: userIdForData } as OnCreateLedgerEntrySubscriptionVariables,
       authMode: 'userPool'
     }).subscribe({
       next: ({ data }) => {
         const newEntry = data?.onCreateLedgerEntry;
         console.log("SalesLedger: Subscription received data:", newEntry);
-        if (newEntry && newEntry.owner === userIdForData) { 
+        if (newEntry && newEntry.owner === userIdForData) {
           console.log("SalesLedger: Subscription received new ledger entry for current userIdForData:", newEntry.id);
           fetchInitialEntries(userIdForData);
-          if (newEntry.type === LedgerEntryType.INVOICE) { 
+          if (newEntry.type === LedgerEntryType.INVOICE) {
             fetchInitialStatus(userIdForData);
           }
         }
@@ -243,10 +239,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     };
   }, [userIdForData, fetchInitialEntries, fetchInitialStatus]);
 
-  // Calculation useEffects (using imported Enums)
-  useEffect(() => { 
+  useEffect(() => {
     let calculatedSLBalance = 0;
-    entries.forEach(entry => { 
+    entries.forEach(entry => {
       if (entry.type === LedgerEntryType.INVOICE || entry.type === LedgerEntryType.INCREASE_ADJUSTMENT) {
         calculatedSLBalance += entry.amount;
       } else if (entry.type === LedgerEntryType.CREDIT_NOTE || entry.type === LedgerEntryType.DECREASE_ADJUSTMENT || entry.type === LedgerEntryType.CASH_RECEIPT) {
@@ -256,9 +251,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
   }, [entries]);
 
-  useEffect(() => { 
+  useEffect(() => {
     let calculatedAccBalance = 0;
-    currentAccountTransactions.forEach(transaction => { 
+    currentAccountTransactions.forEach(transaction => {
       if (transaction.type === CurrentAccountTransactionType.PAYMENT_REQUEST) {
         calculatedAccBalance += transaction.amount;
       } else if (transaction.type === CurrentAccountTransactionType.CASH_RECEIPT) {
@@ -268,13 +263,13 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCalculatedCurrentAccountBalance(parseFloat(calculatedAccBalance.toFixed(2)));
   }, [currentAccountTransactions]);
 
-  useEffect(() => { 
+  useEffect(() => {
     const unapprovedValue = accountStatus?.totalUnapprovedInvoiceValue ?? 0;
     const grossAvail = (currentSalesLedgerBalance - unapprovedValue) * ADVANCE_RATE;
     setGrossAvailTemp(grossAvail);
   }, [currentSalesLedgerBalance, accountStatus]);
 
-  useEffect(() => { 
+  useEffect(() => {
     const netAvail = grossAvailTemp - calculatedCurrentAccountBalance;
     setNetAvailTemp(netAvail);
   }, [grossAvailTemp, calculatedCurrentAccountBalance]);
@@ -287,23 +282,23 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     if (!userIdForData && !isAdmin) { setError("User context not available for action."); return; }
     if (isAdmin && !targetUserId && !userIdForData) { setError("No target user selected by admin for action."); return; }
 
-    const effectiveUserIdForDisplayRefresh = userIdForData; 
+    const effectiveUserIdForDisplayRefresh = userIdForData;
     if(!effectiveUserIdForDisplayRefresh) { setError("Target user for display refresh is unclear."); return; }
 
     setError(null);
     try {
       if (isAdmin && targetUserId && targetUserId === userIdForData) {
         console.log(`SalesLedger: Admin (${loggedInUserSub}) adding ledger entry FOR target user: ${targetUserId}`);
-        const adminInput: AdminCreateLedgerEntryInput = { 
+        const adminInput: AdminCreateLedgerEntryInput = {
           type: entryData.type as LedgerEntryType,
           amount: entryData.amount,
           description: entryData.description || undefined,
-          targetUserId: targetUserId, 
+          targetUserId: targetUserId,
         };
-        await client.graphql<AdminCreateLedgerEntryMutation>({ 
-          query: adminCreateLedgerEntry, // Use imported document
+        await client.graphql<AdminCreateLedgerEntryMutation>({
+          query: adminCreateLedgerEntry,
           variables: { input: adminInput },
-          authMode: 'userPool' 
+          authMode: 'userPool'
         });
         console.log("SalesLedger: AdminCreateLedgerEntry mutation called successfully.");
       } else {
@@ -314,7 +309,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
           description: entryData.description || undefined,
         };
         await client.graphql<CreateLedgerEntryMutation>({
-          query: createLedgerEntry, // Use imported document
+          query: createLedgerEntry,
           variables: { input: input },
           authMode: 'userPool'
         });
@@ -322,8 +317,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       }
       
       await fetchInitialEntries(effectiveUserIdForDisplayRefresh);
-      if (entryData.type === LedgerEntryType.INVOICE) { 
-          await fetchInitialStatus(effectiveUserIdForDisplayRefresh);
+      if (entryData.type === LedgerEntryType.INVOICE) {
+        await fetchInitialStatus(effectiveUserIdForDisplayRefresh);
       }
 
     } catch (err: any) {
@@ -334,14 +329,28 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   };
 
   const handlePaymentRequest = async (amount: number) => {
-    if (!loggedInUserSub) { setError("Your session is invalid. Cannot request payment."); return; }
-    if (!userIdForData && !isAdmin) { setError("User context for action is not available."); return; }
-    if (isAdmin && !userIdForData && !targetUserId) { setError("No target user selected by admin for action."); return; }
+    if (!loggedInUserSub) { 
+        setError("Your session is invalid. Cannot request payment."); 
+        setPaymentRequestLoading(false); // Also reset loading if returning early
+        return; 
+    }
+    // Ensure userIdForData is available for non-admins or matches targetUserId for admins
+    if (!userIdForData) {
+        setError("User context for action is not available. Please select a user or ensure you are logged in.");
+        setPaymentRequestLoading(false);
+        return;
+    }
+    // For admins, targetUserId must be set if they intend to act on behalf of someone.
+    // If isAdmin is true, and targetUserId is what they're acting on, userIdForData should equal targetUserId.
+    if (isAdmin && (!targetUserId || targetUserId !== userIdForData)) {
+        setError("Admin action: Target user context is unclear or does not match. Please select a user.");
+        setPaymentRequestLoading(false);
+        return;
+    }
     
     setPaymentRequestLoading(true); setPaymentRequestError(null); setPaymentRequestSuccess(null);
     
-    const effectiveUserIdForDisplayRefresh = userIdForData;
-    if(!effectiveUserIdForDisplayRefresh) { setError("Target user for display refresh is unclear."); setPaymentRequestLoading(false); return; }
+    const effectiveUserIdForDisplayRefresh = userIdForData; 
 
     try {
       if (isAdmin && targetUserId && targetUserId === userIdForData) {
@@ -349,26 +358,37 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         const adminInput: AdminRequestPaymentForUserInput = {
             targetUserId: targetUserId,
             amount: amount,
-            paymentDescription: `Payment request for user ${targetUserId}` 
+            paymentDescription: `Payment request for user ${targetUserId} initiated by admin ${loggedInUserSub}`
         };
         const result = await client.graphql<AdminRequestPaymentForUserMutation>({
-            query: adminRequestPaymentForUser, // Use imported document
+            query: adminRequestPaymentForUser,
             variables: { input: adminInput },
             authMode: 'userPool'
         });
         console.log("SalesLedger: AdminRequestPaymentForUser response:", result);
         if(result.errors) throw result.errors;
-        const responseData = result.data?.adminRequestPaymentForUser; 
+        const responseData = result.data?.adminRequestPaymentForUser;
         if (responseData?.success) {
             setPaymentRequestSuccess(responseData.message || `Admin: Payment request for user ${targetUserId.substring(0,8)}... submitted successfully! Transaction ID: ${responseData.transactionId || 'N/A'}`);
         } else {
             throw new Error(responseData?.message || "Admin payment request failed without specific message from backend.");
         }
-      } else {
+      } else { // Non-admin user requesting for themselves
         console.log(`SalesLedger: User (${loggedInUserSub}) requesting payment for themselves (acting for user ID: ${userIdForData}).`);
-        const input: SendPaymentRequestInput = { amount: amount }; 
+        
+        const toEmailValue = "ross@aurumif.com"; // Hardcoded as requested
+        const subjectValue = `Payment Request - Amount: £${amount.toFixed(2)} from user ${loggedInUserSub}`;
+        const bodyValue = `User (sub: ${loggedInUserSub}, acting for data of user ID: ${userIdForData}) has requested a payment of £${amount.toFixed(2)}. Thank you.`;
+
+        const input: SendPaymentRequestInput = { 
+          amount: amount,
+          toEmail: toEmailValue,
+          subject: subjectValue,
+          body: bodyValue
+        }; 
+        
         const result = await client.graphql<SendPaymentRequestEmailMutation>({
-          query: sendPaymentRequestEmail, // Use imported document
+          query: sendPaymentRequestEmail,
           variables: { input: input }, 
           authMode: 'userPool'
         });
@@ -400,7 +420,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     if (error) { 
         return <Alert variation="error" heading="Admin Page Error">{error}</Alert>; 
     }
-    return ( <View padding="xl"><Alert variation="info">Please select a user to view their sales ledger details.</Alert></View> );
+    return ( <View padding="xl"><Alert variation="info">Please select a user from the list on the Admin Page to view their sales ledger details.</Alert></View> );
   }
   
   if (!userIdForData) { 

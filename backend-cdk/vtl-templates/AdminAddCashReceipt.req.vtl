@@ -1,61 +1,17 @@
-## Admin Add Cash Receipt Request Mapping Template (for DynamoDB PutItem)
-
-#set( $input = $context.args.input )
-
-## --- 1. Input Validation ---
-#if( $util.isNull($input.amount) ) ## Amount can be 0 or negative (e.g. refund), so just check for null.
+#if( $util.isNull($context.arguments.input.amount) )
   $util.error("input.amount is required to add a cash receipt.", "ValidationException")
 #end
-## Add validation for other expected fields from $input if necessary
-## For example, if a targetAccountId or reference is expected:
-## #if( $util.isNullOrBlank($input.targetAccountId) )
-##   $util.error("input.targetAccountId is required.", "ValidationException")
-## #end
-
-
-## --- 2. Prepare Item Attributes ---
-#set( $itemId = $util.autoId() )
-#set( $now = $util.time.nowISO8601() ) ## Standard ISO8601 timestamp
-#set( $adminWhoAddedReceipt = $context.identity.sub )
-
-#if( $util.isNullOrBlank($adminWhoAddedReceipt) )
-    $util.error("Admin identity (sub) is missing. Cannot determine who added the receipt.", "AuthenticationError")
-#end
-
-#set( $itemToCreate = {
-    "id": $itemId,
-    "amount": $input.amount,
-    "receiptDate": $now, ## Using current time as receiptDate; adjust if $input.receiptDate is provided
-    "status": "PENDING",  ## Default status, can be updated later
-    "createdBy": $adminWhoAddedReceipt, ## Records which admin added this receipt
-    "owner": $adminWhoAddedReceipt, ## Assuming the 'owner' of this receipt record is the admin who created it.
-                                 ## If this receipt pertains to a specific user/account,
-                                 ## you might have an additional field like 'targetAccountId' from $input.
-    "createdAt": $now,
-    "updatedAt": $now
-} )
-
-## Add optional fields if provided, e.g., description, targetAccountId
-#if( $input.containsKey("description") && !$util.isNullOrBlank($input.description) )
-    $util.qr($itemToCreate.put("description", $input.description))
-#end
-#if( $input.containsKey("targetAccountId") && !$util.isNullOrBlank($input.targetAccountId) )
-    ## If you have a target account ID this receipt is for
-    $util.qr($itemToCreate.put("targetAccountId", $input.targetAccountId))
-    ## You might also set 'owner' to $input.targetAccountId if that's your model
-    ## $util.qr($itemToCreate.put("owner", $input.targetAccountId))
-#end
-
-## --- 3. Logging ---
-$util.qr($ctx.log.info("AdminAddCashReceipt.req.vtl - Admin ($adminWhoAddedReceipt) adding cash receipt."))
-$util.qr($ctx.log.info("AdminAddCashReceipt.req.vtl - Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
 
 {
-    "version": "2018-05-29",
-    "operation": "PutItem",
-    ## attributeValues must be a map of DynamoDB attribute values
-    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
-    "condition": {
-        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
-    }
+  "version": "2018-05-29",
+  "operation": "Invoke",
+  "payload": {
+    "info": {
+      "fieldName": $util.toJson($context.info.fieldName),
+      "parentTypeName": $util.toJson($context.info.parentTypeName)
+    },
+    "arguments": $util.toJson($context.arguments),
+    "identity": $util.toJson($context.identity)
+  }
 }
+
