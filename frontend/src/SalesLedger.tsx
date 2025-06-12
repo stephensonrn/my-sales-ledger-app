@@ -251,17 +251,19 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
   }, [entries]);
 
-  useEffect(() => {
-    let calculatedAccBalance = 0;
-    currentAccountTransactions.forEach(transaction => {
-      if (transaction.type === CurrentAccountTransactionType.PAYMENT_REQUEST) {
-        calculatedAccBalance += transaction.amount;
-      } else if (transaction.type === CurrentAccountTransactionType.CASH_RECEIPT) {
-        calculatedAccBalance -= transaction.amount;
-      }
-    });
-    setCalculatedCurrentAccountBalance(parseFloat(calculatedAccBalance.toFixed(2)));
-  }, [currentAccountTransactions]);
+useEffect(() => {
+  let calculatedSLBalance = 0;
+  entries.forEach(entry => {
+    const type = (entry.type || '').toUpperCase();
+    const amount = parseFloat(entry.amount ?? 0);
+    if (type === 'INVOICE' || type === 'INCREASE_ADJUSTMENT') {
+      calculatedSLBalance += amount;
+    } else if (['CREDIT_NOTE', 'DECREASE_ADJUSTMENT', 'CASH_RECEIPT'].includes(type)) {
+      calculatedSLBalance -= amount;
+    }
+  });
+  setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
+}, [entries]);
 
   useEffect(() => {
     const unapprovedValue = accountStatus?.totalUnapprovedInvoiceValue ?? 0;
