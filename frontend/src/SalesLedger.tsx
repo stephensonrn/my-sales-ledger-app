@@ -37,7 +37,7 @@ interface SalesLedgerProps {
 }
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
-    const client = generateClient(); // Initialize client once per component instance
+    const client = generateClient();
 
     const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -102,10 +102,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             } while (nextToken);
             return allEntries;
         } catch (err) {
+            setError("Error fetching ledger entries.");
             console.error("Error in fetchAllLedgerEntries:", err);
-            throw err; // Re-throw to be caught by the calling useEffect
+            throw err;
         }
-    }, [client]); // client is a dependency
+    }, [client]);
 
     // Function to refresh all data - useful after mutations
     const refreshAllData = useCallback(async () => {
