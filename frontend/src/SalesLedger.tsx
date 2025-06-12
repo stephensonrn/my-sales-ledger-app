@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
+import { getCurrentUser } from 'aws-amplify/auth'; // Import getCurrentUser
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -56,32 +56,20 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Ensure user is authenticated before making requests
-  const ensureAuth = async () => {
-    try {
-      const user = await Auth.currentAuthenticatedUser();
-      const idToken = user.signInUserSession.idToken.jwtToken; // Extract the token
-      console.log('Authenticated with token:', idToken);
-      return user;
-    } catch (error) {
-      console.error('User not authenticated:', error);
-      setError("Could not retrieve current user session. Please ensure you are logged in.");
-      return null;
-    }
-  };
-
-  // Fetch logged-in user details
+  // Fetch logged-in user details using getCurrentUser
   useEffect(() => {
     async function fetchUserDetails() {
-      const user = await ensureAuth(); // Ensure user is authenticated
-      if (user) {
+      try {
+        const user = await getCurrentUser(); // Use getCurrentUser to get the logged-in user
         setLoggedInUserSub(user.username);
         setUserEmail(user.attributes.email ?? null);
         setUserCompanyName(user.attributes['custom:company_name'] ?? null);
+      } catch (err) {
+        setError("Could not retrieve current user session. Please ensure you are logged in.");
       }
     }
     fetchUserDetails();
-  }, []);
+  }, []); 
 
   // Determine userIdForData based on admin status or logged-in user
   useEffect(() => {
@@ -118,7 +106,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       setError("Failed to load ledger entries.");
       throw err; // Re-throw to be caught by the calling useEffect
     }
-  }, [client]); // client is a dependency
+  }, [client]);
 
   // Function to refresh all data - useful after mutations
   const refreshAllData = useCallback(async () => {
