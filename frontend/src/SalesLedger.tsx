@@ -56,16 +56,28 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch logged-in user details using getCurrentUser
+  // Ensure user is authenticated before making requests
+  const ensureAuth = async () => {
+    try {
+      const user = await getCurrentUser(); // Use getCurrentUser to get the logged-in user
+      const idToken = user.signInUserSession.idToken.jwtToken; // Extract the token
+      console.log('Authenticated with token:', idToken);
+      return user;
+    } catch (error) {
+      console.error('User not authenticated:', error);
+      setError("Could not retrieve current user session. Please ensure you are logged in.");
+      return null;
+    }
+  };
+
+  // Fetch logged-in user details
   useEffect(() => {
     async function fetchUserDetails() {
-      try {
-        const user = await getCurrentUser(); // Use getCurrentUser to get the logged-in user
+      const user = await ensureAuth(); // Ensure user is authenticated
+      if (user) {
         setLoggedInUserSub(user.username);
         setUserEmail(user.attributes.email ?? null);
         setUserCompanyName(user.attributes['custom:company_name'] ?? null);
-      } catch (err) {
-        setError("Could not retrieve current user session. Please ensure you are logged in.");
       }
     }
     fetchUserDetails();
@@ -87,19 +99,21 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let allEntries: LedgerEntry[] = [];
     let nextToken: string | undefined = undefined;
     try {
-      do {
+      const user = await ensureAuth(); // Ensure user is authenticated
+      if (user) {
         const response = await client.graphql({
           query: listLedgerEntries,
           variables: {
             filter: { owner: { eq: ownerId } },
             nextToken,
             limit: 50,
-          }
+          },
+          authMode: 'AMAZON_COGNITO_USER_POOLS', // Ensure using the correct auth mode for the query
         });
         const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
         nextToken = response.data?.listLedgerEntries?.nextToken || undefined;
-      } while (nextToken);
+      }
       return allEntries;
     } catch (err) {
       console.error("Error in fetchAllLedgerEntries:", err);
