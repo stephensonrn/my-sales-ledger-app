@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth'; // Import getCurrentUser
+import { getCurrentUser } from 'aws-amplify/auth';
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -59,7 +59,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Ensure user is authenticated before making requests
   const ensureAuth = async () => {
     try {
-      const user = await getCurrentUser(); // Use getCurrentUser to get the logged-in user
+      const user = await getCurrentUser(); // Ensure the user is logged in
       const idToken = user.signInUserSession.idToken.jwtToken; // Extract the token
       console.log('Authenticated with token:', idToken);
       return user;
@@ -81,7 +81,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       }
     }
     fetchUserDetails();
-  }, []); 
+  }, []);
 
   // Determine userIdForData based on admin status or logged-in user
   useEffect(() => {
@@ -99,28 +99,26 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let allEntries: LedgerEntry[] = [];
     let nextToken: string | undefined = undefined;
     try {
-      const user = await ensureAuth(); // Ensure user is authenticated
-      if (user) {
+      do {
         const response = await client.graphql({
           query: listLedgerEntries,
           variables: {
             filter: { owner: { eq: ownerId } },
             nextToken,
             limit: 50,
-          },
-          authMode: 'AMAZON_COGNITO_USER_POOLS', // Ensure using the correct auth mode for the query
+          }
         });
         const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
         nextToken = response.data?.listLedgerEntries?.nextToken || undefined;
-      }
+      } while (nextToken);
       return allEntries;
     } catch (err) {
       console.error("Error in fetchAllLedgerEntries:", err);
       setError("Failed to load ledger entries.");
       throw err; // Re-throw to be caught by the calling useEffect
     }
-  }, [client]);
+  }, [client]); // client is a dependency
 
   // Function to refresh all data - useful after mutations
   const refreshAllData = useCallback(async () => {
