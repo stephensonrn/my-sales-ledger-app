@@ -73,16 +73,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
     // Determine userIdForData based on admin status or logged-in user
     useEffect(() => {
-        console.log("SalesLedger: Determining userIdForData. isAdmin:", isAdmin, "targetUserId:", targetUserId, "loggedInUserSub:", loggedInUserSub);
         if (isAdmin && targetUserId) {
-            console.log("SalesLedger: Admin is viewing/acting for target user:", targetUserId);
             setUserIdForData(targetUserId);
         } else if (!isAdmin && loggedInUserSub) {
-            console.log("SalesLedger: Non-admin is viewing/acting for their own data:", loggedInUserSub);
             setUserIdForData(loggedInUserSub);
         } else {
-            // Handle cases where userIdForData might still be null, e.g., not logged in yet
-            console.log("SalesLedger: userIdForData remains null or undefined.");
             setUserIdForData(null); // Explicitly ensure it's null if no valid user ID
         }
     }, [isAdmin, targetUserId, loggedInUserSub]);
@@ -114,69 +109,54 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
     // Function to refresh all data - useful after mutations
     const refreshAllData = useCallback(async () => {
-        if (!userIdForData) return; // Don't refresh if no user ID
+        if (!userIdForData) return;
 
-        // Refetch Entries
         setLoadingEntries(true);
-        console.log(`SALESLEDGER.TSX: Attempting to fetchInitialEntries for user: ${userIdForData}`);
         try {
             const entriesResponse = await fetchAllLedgerEntries(userIdForData);
             setEntries(entriesResponse);
         } catch (err) {
-            console.error("SalesLedger: Ledger history error for user", userIdForData, err);
             setError("Failed to load ledger history.");
         } finally {
             setLoadingEntries(false);
         }
 
-        // Refetch Account Status
         setLoadingStatus(true);
-        console.log(`SALESLEDGER.TSX: Attempting to fetchInitialStatus for user: ${userIdForData}`);
         try {
             const statusResponse = await client.graphql({
                 query: listAccountStatuses,
-                variables: { owner: userIdForData, limit: 1 } // Using owner as per your schema, limit to 1 for status
+                variables: { owner: userIdForData, limit: 1 }
             });
             const statusItem = statusResponse.data?.listAccountStatuses?.items?.[0] || null;
             setAccountStatus(statusItem);
         } catch (err) {
-            console.error("SalesLedger: Account status error for user", userIdForData, err);
             setError("Failed to load account status.");
         } finally {
             setLoadingStatus(false);
         }
 
-        // Refetch Transactions
         setLoadingTransactions(true);
-        console.log(`SALESLEDGER.TSX: Attempting to fetchInitialTransactions for user: ${userIdForData}`);
         try {
             const transactionsResponse = await client.graphql({
                 query: listCurrentAccountTransactions,
-                variables: { filter: { owner: { eq: userIdForData } } } // Adjust filter as needed
+                variables: { filter: { owner: { eq: userIdForData } } }
             });
             const transactionItems = transactionsResponse.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
             setCurrentAccountTransactions(transactionItems);
         } catch (err) {
-            console.error("SalesLedger: Account transaction error for user", userIdForData, err);
             setError("Failed to load account transactions.");
         } finally {
             setLoadingTransactions(false);
         }
-    }, [userIdForData, fetchAllLedgerEntries, client]); // Dependencies for useCallback
+    }, [userIdForData, fetchAllLedgerEntries, client]);
 
-    // Initial data fetch effect
     useEffect(() => {
-        console.log("SalesLedger: Data Fetch Effect triggered. userIdForData:", userIdForData);
         refreshAllData();
     }, [userIdForData, refreshAllData]);
 
     // Subscription setup
     useEffect(() => {
-        if (!userIdForData) {
-            console.log("SalesLedger: No userIdForData, skipping subscription setup.");
-            return;
-        }
-        console.log(`SalesLedger: Setting up subscription for owner: ${userIdForData}`);
+        if (!userIdForData) return;
         const sub = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: userIdForData }
@@ -190,7 +170,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
         });
 
-        return () => sub.unsubscribe(); // Unsubscribe when component unmounts
+        return () => sub.unsubscribe();
     }, [userIdForData, client]);
 
     const handlePaymentRequest = async () => {
@@ -198,13 +178,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         setPaymentRequestError(null);
         setPaymentRequestSuccess(null);
         try {
-            if (!userEmail) {
-                throw new Error("User email is not available for payment request.");
-            }
-            const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0; // Example calculation
-            if (amountToRequest <= 0) {
-                 throw new Error("Calculated amount for payment request is zero or negative.");
-            }
+            if (!userEmail) throw new Error("User email is not available for payment request.");
+            const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
+            if (amountToRequest <= 0) throw new Error("Calculated amount for payment request is zero or negative.");
 
             const input: SendPaymentRequestInput = {
                 amount: amountToRequest,
@@ -216,7 +192,6 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             });
             setPaymentRequestSuccess("Payment request sent successfully!");
         } catch (error) {
-            console.error("Failed to submit payment request:", error);
             setPaymentRequestError("Failed to submit payment request: " + (error as Error).message);
         } finally {
             setPaymentRequestLoading(false);
@@ -233,15 +208,14 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
                 amount: newEntry.amount,
                 description: newEntry.description,
                 type: newEntry.type,
-                targetUserId: userIdForData, // Ensure this matches your mutation input
+                targetUserId: userIdForData,
             };
             await client.graphql({
                 query: adminCreateLedgerEntry,
                 variables: { input },
             });
-            refreshAllData(); // Refresh data after adding new entry
+            refreshAllData();
         } catch (err) {
-            console.error("Error adding ledger entry:", err);
             setError("Failed to add ledger entry. Please try again.");
         }
     };
@@ -270,17 +244,12 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     return (
         <View className="sales-ledger-container">
             <h2>Sales Ledger for {userCompanyName || 'Your Business'}</h2>
-
-            {/* Pass actual balance to CurrentBalance with null-safe access */}
             <CurrentBalance balance={accountStatus?.totalUnapprovedInvoiceValue || 0} />
-
             <AvailabilityDisplay
                 currentBalance={accountStatus?.totalUnapprovedInvoiceValue || 0}
                 advanceRate={ADVANCE_RATE}
             />
-
             <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
-
             <PaymentRequestForm
                 onSubmitRequest={handlePaymentRequest}
                 isLoading={paymentRequestLoading}
@@ -288,9 +257,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
                 requestSuccess={paymentRequestSuccess}
                 calculatedAdvance={accountStatus ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE : 0}
             />
-
             <ManageAccountStatus selectedOwnerSub={userIdForData} />
-
             <LedgerHistory entries={entries} />
         </View>
     );
