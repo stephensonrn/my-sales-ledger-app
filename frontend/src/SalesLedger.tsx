@@ -40,6 +40,7 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
+import ManageAccountStatus from './ManageAccountStatus'; // <-- Import ManageAccountStatus
 import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
 
 const client = generateClient();
@@ -181,16 +182,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
   // Centralized refresh function
   const refreshAllData = useCallback(async () => {
-    if (!userIdForData) {
-      setEntries([]);
-      setAccountStatus(null);
-      setCurrentAccountTransactions([]);
-      setLoadingEntries(false);
-      setLoadingStatus(false);
-      setLoadingTransactions(false);
-      return;
-    }
-
+    if (!userIdForData) return;
     setLoadingEntries(true);
     setLoadingStatus(true);
     setLoadingTransactions(true);
@@ -206,7 +198,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
       setCurrentAccountTransactions(allTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     } catch (err: any) {
-      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching sales ledger data.';
+      const errorMessages = err.errors && Array.isArray(err.errors)
+        ? err.errors.map((e: any) => e.message).join(', ')
+        : err.message || 'Unknown error fetching sales ledger data.';
       setError(`Data fetch error: ${errorMessages}`);
       setEntries([]);
       setCurrentAccountTransactions([]);
@@ -218,7 +212,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, [userIdForData, fetchAllLedgerEntries, fetchAllCurrentAccountTransactions, fetchInitialStatus]);
 
-  // Fetch all data on userIdForData change
+  // Use centralized refresh function on userIdForData change
   useEffect(() => {
     refreshAllData();
   }, [userIdForData, refreshAllData]);
@@ -235,8 +229,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       next: ({ data }) => {
         const newEntry = data?.onCreateLedgerEntry;
         if (newEntry && newEntry.owner === userIdForData) {
-          // On new ledger entry, refresh all data
-          refreshAllData().catch(err => console.error("Subscription update fetch error", err));
+          refreshAllData();
         }
       },
       error: (err) => {
@@ -335,6 +328,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       }
 
       await refreshAllData();
+
     } catch (err: any) {
       const errorMessages = err.errors && Array.isArray(err.errors)
         ? err.errors.map((e: any) => e.message).join(', ')
@@ -406,6 +400,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       }
 
       await refreshAllData();
+
     } catch (err: any) {
       const errorMessage = err.errors && Array.isArray(err.errors)
         ? err.errors.map((e: any) => e.message).join(", ")
@@ -459,6 +454,14 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         totalUnapprovedInvoiceValue={accountStatus?.totalUnapprovedInvoiceValue ?? 0}
         currentAccountBalance={calculatedCurrentAccountBalance}
       />
+
+      {isAdmin && userIdForData && (
+        <ManageAccountStatus
+          selectedOwnerSub={userIdForData}
+          targetUserName={targetUserId ?? undefined}
+          onStatusUpdated={refreshAllData} // <-- Pass refresh callback here
+        />
+      )}
 
       <PaymentRequestForm
         netAvailability={netAvailability}
