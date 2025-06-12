@@ -79,6 +79,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch logged in user sub and attributes on mount
+    // Fetch logged in user sub and attributes on mount
   useEffect(() => {
     async function fetchUserDetails() {
       try {
