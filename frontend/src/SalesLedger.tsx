@@ -1,6 +1,5 @@
-// src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { API, graphqlOperation } from 'aws-amplify';
+import { generateClient } from '@aws-amplify/api-graphql'; // Using generateClient for GraphQL
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 import * as Auth from '@aws-amplify/auth';
 
@@ -43,6 +42,9 @@ import PaymentRequestForm from './PaymentRequestForm';
 import ManageAccountStatus from './ManageAccountStatus'; // <-- Import ManageAccountStatus
 import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
 
+// Initialize the client for GraphQL
+const client = generateClient();
+
 const ADVANCE_RATE = 0.90;
 
 interface SalesLedgerProps {
@@ -79,7 +81,6 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch logged in user sub and attributes on mount
-    // Fetch logged in user sub and attributes on mount
   useEffect(() => {
     async function fetchUserDetails() {
       try {
@@ -126,11 +127,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await API.graphql(graphqlOperation(listLedgerEntries, {
-          filter: { owner: { eq: ownerId } },
-          nextToken,
-          limit: 50,
-        })) as { data: ListLedgerEntriesQuery; errors?: any[] };
+        const response = await client.graphql({
+          query: listLedgerEntries,
+          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
+        }) as { data: ListLedgerEntriesQuery; errors?: any[] };
         if (response.errors) throw response.errors;
         const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
@@ -148,11 +148,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await API.graphql(graphqlOperation(listCurrentAccountTransactions, {
-          filter: { owner: { eq: ownerId } },
-          nextToken,
-          limit: 50,
-        })) as { data: ListCurrentAccountTransactionsQuery; errors?: any[] };
+        const response = await client.graphql({
+          query: listCurrentAccountTransactions,
+          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
+        }) as { data: ListCurrentAccountTransactionsQuery; errors?: any[] };
         if (response.errors) throw response.errors;
         const items = response.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
         allTransactions = [...allTransactions, ...items];
@@ -169,10 +168,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setLoadingStatus(true);
     setError(null);
     try {
-      const response = await API.graphql(graphqlOperation(listAccountStatuses, {
-        filter: { owner: { eq: ownerId } },
-        limit: 1,
-      })) as { data: ListAccountStatusesQuery; errors?: any[] };
+      const response = await client.graphql({
+        query: listAccountStatuses,
+        variables: { filter: { owner: { eq: ownerId } }, limit: 1 },
+      }) as { data: ListAccountStatusesQuery; errors?: any[] };
       if (response.errors) throw response.errors;
       const items = response.data?.listAccountStatuses?.items?.filter(Boolean) as AccountStatus[] || [];
       setAccountStatus(items.length > 0 ? items[0] : null);
@@ -225,11 +224,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Subscription for new ledger entries
   useEffect(() => {
     if (!userIdForData) return;
-    const sub = API.graphql({
+    const sub = client.graphql.subscribe({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
-      authMode: 'AMAZON_COGNITO_USER_POOLS'
-    }) as ObservableSubscription<OnCreateLedgerEntrySubscription, OnCreateLedgerEntrySubscriptionVariables>;
+    });
 
     const subscription = sub.subscribe({
       next: ({ value }) => {
@@ -315,14 +313,20 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
           description: entryData.description || undefined,
           targetUserId: targetUserId,
         };
-        await API.graphql(graphqlOperation(adminCreateLedgerEntry, { input: adminInput }));
+        await client.graphql({
+          query: adminCreateLedgerEntry,
+          variables: { input: adminInput },
+        });
       } else {
         const input = {
           type: entryData.type as LedgerEntryType,
           amount: entryData.amount,
           description: entryData.description || undefined,
         };
-        await API.graphql(graphqlOperation(createLedgerEntry, { input }));
+        await client.graphql({
+          query: createLedgerEntry,
+          variables: { input },
+        });
       }
 
       await refreshAllData();
@@ -364,7 +368,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
           amount: amount,
           paymentDescription: `Payment request for user ${targetUserId} with email address ${userEmail ?? "N/A"} and from ${userCompanyName ?? "Unknown Company"} initiated by admin ${loggedInUserSub}`,
         };
-        const result = await API.graphql<AdminRequestPaymentForUserMutation>(graphqlOperation(adminRequestPaymentForUser, { input: adminInput }));
+        const result = await client.graphql<AdminRequestPaymentForUserMutation>(graphqlOperation(adminRequestPaymentForUser, { input: adminInput }));
         if (result.errors) throw result.errors;
         const responseData = result.data?.adminRequestPaymentForUser;
         if (responseData?.success) {
@@ -384,7 +388,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
           body: bodyValue,
         };
 
-        const result = await API.graphql<SendPaymentRequestEmailMutation>(graphqlOperation(sendPaymentRequestEmail, { input }));
+        const result = await client.graphql<SendPaymentRequestEmailMutation>(graphqlOperation(sendPaymentRequestEmail, { input }));
         if (result.errors) throw result.errors;
         setPaymentRequestSuccess(result.data?.sendPaymentRequestEmail ?? 'Payment request submitted successfully!');
       }
