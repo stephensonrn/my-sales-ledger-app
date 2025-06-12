@@ -60,7 +60,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const ensureAuth = async () => {
     try {
       const user = await getCurrentUser(); // Ensure the user is logged in
-      const idToken = user.signInUserSession.idToken.jwtToken; // Extract the token
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+      const idToken = user.signInUserSession?.idToken?.jwtToken; // Extract the token safely
       console.log('Authenticated with token:', idToken);
       return user;
     } catch (error) {
