@@ -1,13 +1,16 @@
+// handler.ts in adminDataActions Lambda
+
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 
 const DDB_TABLE_TRANSACTIONS = process.env.CURRENT_ACCT_TABLE_NAME;
 const DDB_TABLE_ACCOUNT_STATUS = process.env.ACCOUNT_STATUS_TABLE_NAME;
+const DDB_TABLE_SALES_LEDGER = process.env.LEDGER_ENTRY_TABLE_NAME;
 const AWS_REGION = process.env.AWS_REGION || "eu-west-1";
 const ADMIN_GROUP_NAME = process.env.ADMIN_GROUP_NAME || "Admin";
 
-if (!DDB_TABLE_TRANSACTIONS || !DDB_TABLE_ACCOUNT_STATUS) {
+if (!DDB_TABLE_TRANSACTIONS || !DDB_TABLE_ACCOUNT_STATUS || !DDB_TABLE_SALES_LEDGER) {
   throw new Error("Missing required environment variables.");
 }
 
@@ -23,6 +26,8 @@ interface AppSyncEventArguments {
   input?: {
     targetUserId?: string;
     amount?: number;
+    description?: string;
+    type?: string;
   };
 }
 
@@ -32,6 +37,7 @@ interface AppSyncEvent {
     sub: string;
     username: string;
     groups: string[] | null;
+    sourceIp?: string[];
   };
   info: {
     fieldName: string;
@@ -40,28 +46,7 @@ interface AppSyncEvent {
 }
 
 type CurrentAccountTransactionType = "CASH_RECEIPT" | "PAYMENT_REQUEST";
-
-interface CurrentAccountTransaction {
-  id: string;
-  owner: string;
-  type: CurrentAccountTransactionType;
-  amount: number;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-  createdByAdmin?: string;
-  __typename: string;
-}
-
-interface AccountStatus {
-  id: string;
-  owner: string;
-  totalUnapprovedInvoiceValue: number;
-  createdAt: string;
-  updatedAt: string;
-  createdByAdmin?: string;
-  __typename: string;
-}
+type LedgerEntryType = "INVOICE" | "CASH_RECEIPT" | "CREDIT_NOTE" | "INCREASE_ADJUSTMENT" | "DECREASE_ADJUSTMENT";
 
 function isAdmin(groups: string[] | null | undefined): boolean {
   return !!groups?.includes(ADMIN_GROUP_NAME);
@@ -73,7 +58,7 @@ function createTransaction(
   amount: number,
   description: string | null,
   adminSub?: string
-): CurrentAccountTransaction {
+) {
   const now = new Date().toISOString();
   return {
     id: ulid(),
@@ -88,11 +73,35 @@ function createTransaction(
   };
 }
 
+function createLedgerEntry(
+  owner: string,
+  type: LedgerEntryType,
+  amount: number,
+  description: string | null,
+  adminSub?: string,
+  ip?: string[],
+  groups?: string[] | null
+) {
+  const now = new Date().toISOString();
+  return {
+    id: ulid(),
+    owner,
+    type,
+    amount,
+    description,
+    createdAt: now,
+    updatedAt: now,
+    createdByAdmin: adminSub,
+    ...(ip?.length ? { createdByIp: ip[0] } : {}),
+    ...(groups?.length ? { adminGroups: groups } : {}),
+    __typename: "LedgerEntry",
+  };
+}
+
 export const handler = async (event: AppSyncEvent): Promise<any> => {
   console.log("AdminDataActionsFunction event:", JSON.stringify(event, null, 2));
 
   if (!isAdmin(event.identity?.groups)) {
-    console.error("Unauthorized: Caller is not in Admin group.");
     throw new Error("Unauthorized");
   }
 
@@ -100,14 +109,12 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
 
   switch (event.info.fieldName) {
     case "adminAddCashReceipt": {
-      const { targetOwnerId, amount, description } = event.arguments;
-
+      const { targetOwnerId, amount, description } = event.arguments.input || {};
       if (!targetOwnerId || typeof amount !== "number") {
-        console.error("adminAddCashReceipt: Missing required arguments.");
         throw new Error("Missing targetOwnerId or amount.");
       }
 
-      const newTransaction = createTransaction(
+      const cashReceiptTx = createTransaction(
         targetOwnerId,
         "CASH_RECEIPT",
         amount,
@@ -115,19 +122,73 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
         adminSub
       );
 
+      const ledgerEntry = createLedgerEntry(
+        targetOwnerId,
+        "CASH_RECEIPT",
+        amount,
+        description || null,
+        adminSub,
+        event.identity.sourceIp,
+        event.identity.groups
+      );
+
+      try {
+        await Promise.all([
+          ddbDocClient.send(
+            new PutCommand({
+              TableName: DDB_TABLE_TRANSACTIONS,
+              Item: cashReceiptTx,
+              ConditionExpression: "attribute_not_exists(id)",
+            })
+          ),
+          ddbDocClient.send(
+            new PutCommand({
+              TableName: DDB_TABLE_SALES_LEDGER,
+              Item: ledgerEntry,
+              ConditionExpression: "attribute_not_exists(id)",
+            })
+          ),
+        ]);
+
+        return cashReceiptTx;
+      } catch (err: any) {
+        console.error("Failed to write cash receipt and ledger entry", err);
+        throw new Error(`Failed to add cash receipt: ${err.message}`);
+      }
+    }
+
+    case "adminCreateLedgerEntry": {
+      const input = event.arguments.input;
+      if (
+        !input?.targetUserId ||
+        typeof input.amount !== "number" ||
+        !input.type
+      ) {
+        throw new Error("Missing targetUserId, amount, or type.");
+      }
+
+      const entry = createLedgerEntry(
+        input.targetUserId,
+        input.type as LedgerEntryType,
+        input.amount,
+        input.description || null,
+        adminSub,
+        event.identity.sourceIp,
+        event.identity.groups
+      );
+
       try {
         await ddbDocClient.send(
           new PutCommand({
-            TableName: DDB_TABLE_TRANSACTIONS,
-            Item: newTransaction,
+            TableName: DDB_TABLE_SALES_LEDGER,
+            Item: entry,
             ConditionExpression: "attribute_not_exists(id)",
           })
         );
-        console.log("Successfully added cash receipt:", newTransaction);
-        return newTransaction;
-      } catch (error: any) {
-        console.error("DynamoDB error:", error);
-        throw new Error(`Failed to add cash receipt: ${error.message}`);
+        return entry;
+      } catch (err: any) {
+        console.error("Error creating ledger entry:", err);
+        throw new Error(`CreateLedgerEntryError: ${err.message}`);
       }
     }
 
@@ -135,12 +196,11 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
       const { ownerId, initialUnapprovedInvoiceValue } = event.arguments;
 
       if (!ownerId || typeof initialUnapprovedInvoiceValue !== "number") {
-        console.error("adminCreateAccountStatus: Missing required arguments.");
         throw new Error("Missing ownerId or initialUnapprovedInvoiceValue.");
       }
 
       const now = new Date().toISOString();
-      const newAccountStatus: AccountStatus = {
+      const newAccountStatus = {
         id: ownerId,
         owner: ownerId,
         totalUnapprovedInvoiceValue: initialUnapprovedInvoiceValue,
@@ -157,10 +217,8 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
             Item: newAccountStatus,
           })
         );
-        console.log("Created/updated account status:", newAccountStatus);
         return newAccountStatus;
       } catch (error: any) {
-        console.error("DynamoDB error:", error);
         throw new Error(`Failed to create/update account status: ${error.message}`);
       }
     }
@@ -168,21 +226,14 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
     case "adminRequestPaymentForUser": {
       const paymentInput = event.arguments.input;
 
-      if (
-        !paymentInput ||
-        !paymentInput.targetUserId ||
-        typeof paymentInput.amount !== "number"
-      ) {
-        console.error("adminRequestPaymentForUser: Missing input values.");
+      if (!paymentInput?.targetUserId || typeof paymentInput.amount !== "number") {
         throw new Error("Missing targetUserId or amount.");
       }
 
-      const { targetUserId: paymentTargetUser, amount: paymentAmount } = paymentInput;
-
-      const paymentRequestTransaction = createTransaction(
-        paymentTargetUser,
+      const transaction = createTransaction(
+        paymentInput.targetUserId,
         "PAYMENT_REQUEST",
-        paymentAmount,
+        paymentInput.amount,
         `Admin-initiated payment request by ${adminSub}`,
         adminSub
       );
@@ -191,24 +242,21 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
         await ddbDocClient.send(
           new PutCommand({
             TableName: DDB_TABLE_TRANSACTIONS,
-            Item: paymentRequestTransaction,
+            Item: transaction,
           })
         );
-        console.log("PAYMENT_REQUEST transaction created:", paymentRequestTransaction);
 
         return {
-          message: `Admin initiated payment request for ${paymentAmount} to ${paymentTargetUser}`,
-          transactionId: paymentRequestTransaction.id,
+          message: `Admin initiated payment request for ${paymentInput.amount} to ${paymentInput.targetUserId}`,
+          transactionId: transaction.id,
           __typename: "AdminPaymentRequestResult",
         };
-      } catch (dbError: any) {
-        console.error("DynamoDB error:", dbError);
-        throw new Error(`Failed to create payment request: ${dbError.message}`);
+      } catch (error: any) {
+        throw new Error(`Failed to create payment request: ${error.message}`);
       }
     }
 
     default:
-      console.error("Unknown admin action:", event.info.fieldName);
       throw new Error(`Unsupported admin action: ${event.info.fieldName}`);
   }
 };

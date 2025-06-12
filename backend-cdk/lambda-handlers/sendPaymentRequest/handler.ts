@@ -7,6 +7,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 
+// Initialize AWS SDK Clients
 const sesClient = new SESClient({ region: process.env.AWS_REGION });
 const cognitoClient = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
 const ddbClient = new DynamoDBClient({ region: process.env.AWS_REGION });
@@ -14,13 +15,16 @@ const ddbDocClient = DynamoDBDocumentClient.from(ddbClient, {
   marshallOptions: { removeUndefinedValues: true }
 });
 
-interface LambdaEventArguments { // Renamed for clarity: these are the direct event args
+// Interface for the arguments expected directly in the Lambda event
+interface LambdaEventArguments {
   toEmail: string;
   subject: string;
   body: string;
   amount: number;
+  // Add any other fields your VTL's $lambdaEventArgs map contains
 }
 
+// Interface for Cognito Identity (remains the same)
 interface AppSyncCognitoIdentity {
   claims?: { [key: string]: any; email?: string };
   sub: string;
@@ -31,14 +35,17 @@ interface AppSyncCognitoIdentity {
   defaultAuthStrategy?: string;
 }
 
-// AppSyncResolverEvent's first generic is for the event.arguments type
-export const handler: AppSyncResolverHandler<LambdaEventArguments, string> = async (event) => {
+// AppSyncResolverEvent first generic TArgs is the type of event.arguments.
+// Since our VTL's output becomes the *entire event* for a direct Lambda proxy,
+// we type the event itself more directly or cast.
+export const handler: AppSyncResolverHandler<any, string> = async (event) => {
   const FROM_EMAIL = process.env.FROM_EMAIL;
   const USER_POOL_ID = process.env.USER_POOL_ID;
   const CURRENT_ACCT_TABLE_NAME = process.env.CURRENT_ACCT_TABLE_NAME;
 
   console.log('LAMBDA EVENT (sendPaymentRequestEmail):', JSON.stringify(event, null, 2));
 
+  // Validate critical environment variables
   if (!FROM_EMAIL || FROM_EMAIL.includes('example.com') || FROM_EMAIL.trim() === '') {
     console.error('Configuration error: FROM_EMAIL environment variable is missing or invalid.');
     throw new Error('Configuration error: Email service is not properly configured (sender).');
@@ -48,54 +55,40 @@ export const handler: AppSyncResolverHandler<LambdaEventArguments, string> = asy
     throw new Error('Configuration error: Transaction recording service is unavailable.');
   }
   if (!USER_POOL_ID) {
-    console.warn('Warning: USER_POOL_ID environment variable not set. User detail lookup may be limited.');
+    console.warn('Warning: USER_POOL_ID environment variable not set. User detail lookup for email messages may be limited.');
   }
 
   // --- CORRECTED ARGUMENT ACCESS ---
-  // The arguments are directly in event.arguments (which is the first generic type of AppSyncResolverHandler)
-  // For a direct Lambda proxy where VTL outputs the argument map, 'event' itself might not have 'arguments' field
-  // but AppSync structures the event so that the VTL output becomes event.arguments for the handler type.
-  // However, the log shows the arguments are at the root of the 'event' object itself when VTL ends with $util.toJson(map).
-  // So, we access them directly from 'event' if they are top-level.
-  // The AppSyncResolverHandler<TArgs, TResult> means TArgs refers to event.arguments.
-  // Since your log shows them at root, we'll cast 'event' to 'any' or use a more direct event type.
-  // Let's assume for AppSync direct Lambda proxy, the VTL output IS the event.
+  // The VTL $util.toJson($lambdaEventArgs) makes $lambdaEventArgs the root of the event object.
+  const directArgs = event as LambdaEventArguments; // Cast the event itself
+  console.log("Arguments received directly in event:", JSON.stringify(directArgs, null, 2));
+  // --- END CORRECTED ARGUMENT ACCESS ---
 
-  const actualArgs = event.arguments as LambdaEventArguments; // If VTL passes args to AppSync's $context.arguments
-                                                           // More likely from log, they are at event root.
-
-  // Given your log: LAMBDA EVENT (sendPaymentRequestEmail): { "toEmail": ..., "subject": ..., ... }
-  // This indicates the VTL output $util.toJson($lambdaEventArgs) made $lambdaEventArgs the *entire* event.
-  // So, we should access them from the event directly.
-  const directEventArgs = event as any as LambdaEventArguments; // Casting 'event' directly if args are at root
-
-  console.log("Direct event args received by Lambda:", JSON.stringify(directEventArgs, null, 2));
-
-  // Validate fields from directEventArgs
-  if (!directEventArgs || typeof directEventArgs.amount !== 'number' || directEventArgs.amount <= 0) {
+  // Validate fields from directArgs
+  if (!directArgs || typeof directArgs.amount !== 'number' || directArgs.amount <= 0) {
     throw new Error("Invalid arguments: 'amount' is required and must be a positive number.");
   }
-  if (typeof directEventArgs.toEmail !== 'string' || directEventArgs.toEmail.trim() === '') {
+  if (typeof directArgs.toEmail !== 'string' || directArgs.toEmail.trim() === '') {
     throw new Error("Invalid arguments: 'toEmail' is required.");
   }
-  if (typeof directEventArgs.subject !== 'string' || directEventArgs.subject.trim() === '') {
+  if (typeof directArgs.subject !== 'string' || directArgs.subject.trim() === '') {
     throw new Error("Invalid arguments: 'subject' is required.");
   }
-  if (typeof directEventArgs.body !== 'string' || directEventArgs.body.trim() === '') {
+  if (typeof directArgs.body !== 'string' || directArgs.body.trim() === '') {
     throw new Error("Invalid arguments: 'body' is required.");
   }
 
-  const requestedAmount = directEventArgs.amount;
-  const recipientEmail = directEventArgs.toEmail;
-  const emailSubjectFromArgs = directEventArgs.subject;
-  const emailBodyFromArgs = directEventArgs.body;
-  // --- END CORRECTED ARGUMENT ACCESS ---
+  const requestedAmount = directArgs.amount;
+  const recipientEmail = directArgs.toEmail;
+  const emailSubjectFromArgs = directArgs.subject;
+  const emailBodyFromArgs = directArgs.body;
 
   console.log('Request details: Amount=', requestedAmount, 'To=', recipientEmail, 'Subject=', emailSubjectFromArgs);
 
+  // AppSync automatically adds 'identity', 'source', 'request' etc. to the event alongside your VTL output.
   const identity = event.identity as AppSyncCognitoIdentity | null;
   if (!identity || !identity.sub) {
-    console.error("User identity not found in event.identity.");
+    console.error("User identity (event.identity or event.identity.sub) not found. This is unexpected.");
     throw new Error("User identity not found. Unable to process request.");
   }
   console.log('User identity:', JSON.stringify(identity, null, 2));
@@ -165,6 +158,8 @@ export const handler: AppSyncResolverHandler<LambdaEventArguments, string> = asy
     if (transactionProcessingError) finalMessage += ` Error: ${transactionProcessingError}`;
     if (transactionId && CURRENT_ACCT_TABLE_NAME) finalMessage += ` Ref ID (attempted): ${transactionId}.`;
     console.error("Final error state for sendPaymentRequestEmail:", finalMessage);
-    return finalMessage;
+    // Consider if throwing an error here is more appropriate for critical failures like email send failure
+    // For now, returning a message string as per function signature.
+    throw new Error(finalMessage); // Throwing an error for failure cases is often better for GraphQL
   }
 };

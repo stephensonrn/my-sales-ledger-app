@@ -1,56 +1,12 @@
-## Create Ledger Entry Response Mapping Template
-
 #if($ctx.error)
-    ## If there was an error from the data source (e.g., conditional PutItem failed)
-    $util.error($ctx.error.message, $ctx.error.type)
+  $util.error($ctx.error.message, $ctx.error.type)
 #end
 
-## Log the raw result from the data source for debugging
-## For a successful PutItem, $ctx.result is often the item that was written.
-#set( $logCtxResult = $util.toJson($ctx.result) )
-$util.qr($ctx.log.info("CreateLedgerEntry.res.vtl - Raw result from data source: $logCtxResult"))
-
-## Assuming $ctx.result contains the attributes of the newly created LedgerEntry item
-## (e.g., id, owner, amount, description, timestamp, createdAt, updatedAt).
-## If $ctx.result directly matches your GraphQL LedgerEntry type,
-## $util.toJson($ctx.result) is the most straightforward way to return it.
-## AppSync will automatically map the fields.
-
-## If $ctx.result is null or not the item itself (less common for creates if request VTL prepares the item),
-## you might need to reconstruct the response from $context.arguments.input and any
-## values generated in the request VTL (like id, createdAt, owner), potentially passed via $ctx.stash.
-## However, the common pattern is that $ctx.result IS the created item.
+$util.qr($ctx.log.info("CreateLedgerEntry.res.vtl - Raw result: ${util.toJson($ctx.result)}"))
 
 #if($util.isNull($ctx.result))
-    ## This case might occur if the PutItem operation somehow succeeded but didn't populate $ctx.result as expected.
-    ## Or if a condition in PutItem failed but didn't populate $ctx.error (less likely).
-    $util.qr($ctx.log.warn("CreateLedgerEntry.res.vtl - $ctx.result is null. This might indicate an issue or an unexpected data source behavior."))
-    ## Depending on your GraphQL schema (is LedgerEntry nullable or not for the create mutation?),
-    ## you might return null or an error.
-    #set( $objectToReturn = null )
+  $util.qr($ctx.log.warn("CreateLedgerEntry.res.vtl - $ctx.result is null"))
+  null
 #else
-    #set( $objectToReturn = $ctx.result )
+  $util.toJson($ctx.result)
 #end
-
-$util.toJson($objectToReturn)
-
-## Alternatively, if you want to explicitly map fields (like your original template):
-## This is useful if you want to ensure only specific fields are returned or if names differ.
-#*
-#if($util.isNull($ctx.result))
-    null ## Or $util.error("Failed to retrieve created item details.", "ProcessingError")
-#else
-    #set($responseMap = {
-        "id": $ctx.result.id,
-        "owner": $ctx.result.owner,
-        "amount": $ctx.result.amount,
-        "description": $ctx.result.description,
-        "timestamp": $ctx.result.timestamp
-        ## Include other fields like createdAt, updatedAt if they are part of $ctx.result
-        ## and expected in your GraphQL LedgerEntry type.
-        ## "createdAt": $ctx.result.createdAt,
-        ## "updatedAt": $ctx.result.updatedAt
-    })
-    $util.toJson($responseMap)
-#end
-*#

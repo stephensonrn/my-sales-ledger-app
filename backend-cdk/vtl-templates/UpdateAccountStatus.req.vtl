@@ -1,65 +1,20 @@
-## [UpdateAccountStatus.req.vtl]
-## Extract input and get current timestamp
-#set( $input = $ctx.args.input )
-#set( $id = $input.id )
-#set( $now = $util.time.nowISO8601() )
 
-## Set up key and update expressions
-{
-  "version": "2018-05-29",
-  "operation": "UpdateItem",
-  "key": {
-    "id": $util.dynamodb.toDynamoDB($id)
-  },
-  "update": {
-    "expression": "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValueVal, #updatedAt = :updatedAtVal",
-    "expressionNames": {
-      "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
-      "#updatedAt": "updatedAt"
-    },
-    "expressionValues": {
-      ":totalUnapprovedInvoiceValueVal": {
-        "N": "$input.totalUnapprovedInvoiceValue"
-      },
-      ":updatedAtVal": {
-        "S": "$now"
+      {
+        "version": "2018-05-29",
+        "operation": "UpdateItem",
+        "key": {
+          "id": $util.dynamodb.toDynamoDBJson($ctx.args.input.id)
+        },
+        "update": {
+          "expression": "SET #totalUnapprovedInvoiceValue = :totalUnapprovedInvoiceValue, #updatedAt = :updatedAt",
+          "expressionNames": {
+            "#totalUnapprovedInvoiceValue": "totalUnapprovedInvoiceValue",
+            "#updatedAt": "updatedAt"
+          },
+          "expressionValues": {
+            ":totalUnapprovedInvoiceValue": $util.dynamodb.toDynamoDBJson($ctx.args.input.totalUnapprovedInvoiceValue),
+            ":updatedAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
+          }
+        }
+        ## Add condition like "attribute_exists(id)" if needed ##
       }
-    }
-  },
-
-  ## Construct condition block
-  #set( $conditionExpressionParts = [] )
-  #set( $conditionExpressionNames = {} )
-  #set( $conditionExpressionValues = {} )
-
-  ## Always require the item to exist
-  $util.qr($conditionExpressionParts.add("attribute_exists(#id)"))
-  $util.qr($conditionExpressionNames.put("#id", "id"))
-
-  ## Optional: enforce that non-admin users can only update their own items
-  #set( $isAdmin = $util.defaultIfNull($ctx.identity.claims.get("cognito:groups"), []).contains("Admin") )
-  #if ( !$isAdmin )
-    ## Ensure your table has an "owner" attribute (usually the user's sub)
-    $util.qr($ctx.log.info("Non-admin user detected: enforcing ownership restriction"))
-    $util.qr($conditionExpressionParts.add("#owner = :ownerSub"))
-    $util.qr($conditionExpressionNames.put("#owner", "owner"))
-    $util.qr($conditionExpressionValues.put(":ownerSub", $util.dynamodb.toDynamoDB($ctx.identity.sub)))
-  #else
-    $util.qr($ctx.log.info("Admin user detected: no ownership restriction"))
-  #end
-
-  ## Log for debugging
-  $util.qr($ctx.log.info("Condition expression parts: $util.toJson($conditionExpressionParts)"))
-
-  ## Finalize condition expression
-  #set( $finalConditionExpression = $util.listJoin(" AND ", $conditionExpressionParts) )
-  #if( !$finalConditionExpression )
-    $util.error("Condition expression is empty or null. This should never happen.", "ValidationException")
-  #end
-
-  "condition": {
-    "expression": "$finalConditionExpression",
-    "expressionNames": $conditionExpressionNames,
-    "expressionValues": $conditionExpressionValues
-  }
-}

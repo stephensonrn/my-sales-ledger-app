@@ -1,44 +1,15 @@
 ## Admin Create Ledger Entry Response Mapping Template
 
 #if($ctx.error)
-    ## Handles errors from the Lambda invocation itself (e.g., timeout, permissions, Lambda crash)
-    $util.error($ctx.error.message, $ctx.error.type)
+  $util.error($ctx.error.message, $ctx.error.type)
 #end
 
-#set( $lambdaResult = $context.result ) ## Use a clear variable name for the Lambda's direct output
+#set( $ledgerEntry = $ctx.result )
 
-## Log the raw result from the Lambda function for debugging purposes
-$util.qr($ctx.log.info("AdminCreateLedgerEntry.res.vtl - Raw result from Lambda: $util.toJson($lambdaResult)"))
+$util.qr($ctx.log.info("AdminCreateLedgerEntry.res.vtl - Lambda result: $util.toJson($ledgerEntry)"))
 
-## Check if the overall Lambda result is null (which might indicate an issue if Lambda was expected to return data)
-#if( $util.isNull($lambdaResult) )
-    $util.error("No result returned from the Lambda function. Something went wrong.", "LambdaError")
+#if($util.isNull($ledgerEntry) || !$ledgerEntry.id)
+  $util.error("Ledger entry data not found in Lambda response. Creation might have failed or response format is unexpected.", "CreateLedgerEntryError")
 #end
 
-## Assuming the Lambda result contains a 'ledgerEntry' object with the created entry's details.
-## E.g., Lambda returns: { "ledgerEntry": { "id": "...", "description": "...", ... } }
-#set( $createdLedgerEntry = $lambdaResult.ledgerEntry )
-
-## Check if the 'ledgerEntry' object itself is null or missing within the Lambda response
-#if( $util.isNull($createdLedgerEntry) )
-    $util.error("Ledger entry data not found in Lambda response. Creation might have failed or response format is unexpected.", "CreateLedgerEntryError")
-#end
-
-## Return the created ledger entry.
-## $util.toJson() will convert the $createdLedgerEntry map into a valid JSON object.
-## AppSync will then map fields from this JSON object to your GraphQL LedgerEntry type.
-$util.toJson($createdLedgerEntry)
-
-## Your original explicit mapping approach (if preferred, or if $createdLedgerEntry isn't a direct match):
-#*
-{
-  "id": $createdLedgerEntry.id,
-  "description": $createdLedgerEntry.description,
-  "amount": $createdLedgerEntry.amount,
-  "timestamp": $createdLedgerEntry.timestamp,
-  "status": $createdLedgerEntry.status ## Assuming 'status' is a field in your LedgerEntry type
-  ## Add any other fields from $createdLedgerEntry that map to your GraphQL LedgerEntry type
-}
-*#
-## If using the explicit mapping above, ensure it's the last expression or wrap it in $util.toJson():
-## $util.toJson({ ... your map ... })
+$util.toJson($ledgerEntry)

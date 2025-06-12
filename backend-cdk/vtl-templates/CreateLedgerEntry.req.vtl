@@ -1,55 +1,35 @@
-## VTL Request Template for Mutation.createLedgerEntry
-## Allows an authenticated user to create a ledger entry for themselves.
-## The 'owner' is automatically set to the caller's identity sub.
-
 #set( $input = $context.args.input )
 
-## Validate required input fields from CreateLedgerEntryInput
 #if( $util.isNullOrBlank($input.type) )
   $util.error("input.type is required for the ledger entry.", "ValidationException")
 #end
-#if( $util.isNull($input.amount) ) ## Amount can be 0, so we check for null, not isNullOrBlank
+#if( $util.isNull($input.amount) )
   $util.error("input.amount is required for the ledger entry.", "ValidationException")
 #end
 
-## Prepare the item to be put into DynamoDB
 #set( $itemId = $util.autoId() )
 #set( $now = $util.time.nowISO8601() )
-#set( $ownerId = $context.identity.sub ) ## Owner is the logged-in user
+#set( $ownerSub = $context.identity.sub )
 
-#if( $util.isNullOrBlank($ownerId) )
+#if( $util.isNullOrBlank($ownerSub) )
   $util.error("User identity (sub) is missing. Cannot determine owner.", "AuthenticationError")
 #end
 
-#set( $itemToCreate = {
-    "id": $itemId,
-    "owner": $ownerId,
-    "type": $input.type,
-    "amount": $input.amount,
-    "createdAt": $now,
-    "updatedAt": $now
-})
-
-## Add description only if it's provided and not null.
-## If $input.description is provided as VTL null, $util.dynamodb.toMapValues will store it as DynamoDB NULL type.
-## If you want to omit the attribute entirely if $input.description is null, add: #if( !$util.isNull($input.description) ) before the put.
-#if( $input.containsKey("description") )
-    $util.qr($itemToCreate.put("description", $input.description))
-#else
-    #*
-    $util.qr($itemToCreate.put("description", null))
-    *#
-#end
-
-## Logging
-$util.qr($ctx.log.info("CreateLedgerEntry.req.vtl: User ($ownerId) creating entry. Item: $util.toJson($itemToCreate)"))
-
-## DynamoDB PutItem Operation
 {
-    "version": "2018-05-29",
-    "operation": "PutItem",
-    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
-    "condition": {
-        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
-    }
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "id": { "S": "$itemId" }
+  },
+  "attributeValues": {
+    "id": { "S": "$itemId" },
+    "owner": { "S": "$ownerSub" },
+    "type": { "S": "$input.type" },
+    "amount": { "N": "$input.amount" },
+    "createdAt": { "S": "$now" },
+    "updatedAt": { "S": "$now" }#if( $input.containsKey("description") ), "description": { "S": "$input.description" }#end
+  },
+  "condition": {
+    "expression": "attribute_not_exists(id)"
+  }
 }

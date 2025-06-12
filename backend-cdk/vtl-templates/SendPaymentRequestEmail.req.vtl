@@ -1,4 +1,4 @@
-## Send PaymentRequestEmail.req.vtl (for Lambda expecting args at event root)
+## Send Payment Request Email Request Mapping Template
 
 #set( $input = $context.arguments.input )
 
@@ -15,14 +15,18 @@
   $util.error("Input 'amount' is required.", "ValidationException")
 #end
 
-$util.qr($ctx.log.info("SendPaymentRequestEmail.req.vtl - Input arguments for Lambda event: $util.toJson($input)"))
+$util.qr($ctx.log.info("SendPaymentRequestEmail.req.vtl - Input arguments: $util.toJson($input)"))
 
-#set( $lambdaEventArgs = {
+#set( $lambdaArguments = {
     "toEmail": "$input.toEmail",
     "subject": "$input.subject",
     "body": "$input.body",
-    "amount": $input.amount
+    "amount": $input.amount,
+    "identity": $ctx.identity
 })
 
-## The entire output of this VTL becomes the event object for the Lambda
-$util.toJson($lambdaEventArgs)
+{
+    "version": "2017-02-28",
+    "operation": "Invoke",
+    "payload": $util.toJson($lambdaArguments)
+}

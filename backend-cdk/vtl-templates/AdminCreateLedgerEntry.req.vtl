@@ -1,75 +1,48 @@
-## VTL Request Template for Mutation.adminCreateLedgerEntry
-## Allows an Admin (user in "Admin" group) to create a ledger entry for a specified targetUserId.
-## Incorporates recommendations for auditing and input handling.
-
 #set( $input = $context.args.input )
-
-## --- Input Validation ---
-#if( $util.isNullOrBlank($input.targetUserId) )
-  $util.error("input.targetUserId is required to specify the owner of the ledger entry.", "ValidationException")
-#end
-#if( $util.isNullOrBlank($input.type) )
-  $util.error("input.type is required for the ledger entry.", "ValidationException")
-#end
-#if( $util.isNull($input.amount) ) ## Amount can be 0, so we check for null, not isNullOrBlank
-  $util.error("input.amount is required for the ledger entry.", "ValidationException")
-#end
-
-## --- Prepare the item to be put into DynamoDB ---
 #set( $itemId = $util.autoId() )
 #set( $now = $util.time.nowISO8601() )
-#set( $loggedInAdminSub = $context.identity.sub )
+#set( $adminSub = $context.identity.sub )
 
-#if( $util.isNullOrBlank($loggedInAdminSub) )
-    ## This should ideally be caught by resolver authorization rules (e.g., only allow users in "Admin" group)
-    ## but an extra check here is good defense.
-    $util.error("Admin identity (sub) is missing. Cannot determine creating admin.", "AuthenticationError")
+#if( $util.isNullOrBlank($input.targetUserId) )
+  $util.error("targetUserId is required", "ValidationException")
+#end
+#if( $util.isNullOrBlank($input.type) )
+  $util.error("type is required", "ValidationException")
+#end
+#if( $util.isNull($input.amount) )
+  $util.error("amount is required", "ValidationException")
 #end
 
-#set( $itemToCreate = {
-    "id": $itemId,
-    "owner": $input.targetUserId,  ## Maps input.targetUserId to the 'owner' attribute in DynamoDB
-    "type": $input.type,
-    "amount": $input.amount,
-    "createdAt": $now,
-    "updatedAt": $now,
-    "createdByAdmin": $loggedInAdminSub ## Records which admin created this entry
+## Build the item without 'id'
+#set( $attributes = {
+  "owner": $input.targetUserId,
+  "type": $input.type,
+  "amount": $input.amount,
+  "createdAt": $now,
+  "updatedAt": $now,
+  "createdByAdmin": $adminSub
 } )
 
-## Handle optional description:
-## If 'description' is present in the input (even if null), it will be added to the item.
-## $util.dynamodb.toMapValues will convert a VTL null to a DynamoDB NULL type.
 #if( $input.containsKey("description") )
-    $util.qr($itemToCreate.put("description", $input.description))
+  $util.qr($attributes.put("description", $input.description))
 #end
 
-## --- Optional Audit Metadata ---
-## To use these, add the corresponding fields to your LedgerEntry type in schema.graphql:
-##   createdByIp: AWSIPAddress  (or String)
-##   adminGroups: [String]    (or AWSJSON for the raw array if you want to store the JSON string directly)
-
-#if($context.identity.sourceIp && $context.identity.sourceIp.size() > 0)
-    $util.qr($itemToCreate.put("createdByIp", $context.identity.sourceIp[0]))
-#end
-#if($context.identity.groups && !$context.identity.groups.isEmpty())
-    ## Storing as a DynamoDB String Set (SS) is often more queryable than a JSON string.
-    ## If your 'adminGroups' attribute in DynamoDB is a String Set, use:
-    ## $util.qr($itemToCreate.put("adminGroups", $util.dynamodb.toStringSet($context.identity.groups)))
-    ## If you prefer to store it as a JSON string representation of the array:
-    $util.qr($itemToCreate.put("adminGroups", $util.toJson($context.identity.groups))) ## Stores as a JSON string
+#if( $context.identity.sourceIp && $context.identity.sourceIp.size() > 0 )
+  $util.qr($attributes.put("createdByIp", $context.identity.sourceIp[0]))
 #end
 
-## --- Logging ---
-$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Logged-in admin: $loggedInAdminSub"))
-$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Target owner for new entry: $input.targetUserId"))
-$util.qr($ctx.log.info("AdminCreateLedgerEntry.req.vtl - Item to be created (before toMapValues): $util.toJson($itemToCreate)"))
+#if( $context.identity.groups && !$context.identity.groups.isEmpty() )
+  $util.qr($attributes.put("adminGroups", $context.identity.groups))
+#end
 
-## --- DynamoDB PutItem Operation ---
-{
-    "version": "2018-05-29",
-    "operation": "PutItem",
-    "attributeValues": $util.dynamodb.toMapValues($itemToCreate),
-    "condition": {
-        "expression": "attribute_not_exists(id)" ## Prevent overwriting if an ID collision somehow occurred
-    }
-}
+$util.toJson({
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDB($itemId)
+  },
+  "attributeValues": $util.dynamodb.toMapValues($attributes),
+  "condition": {
+    "expression": "attribute_not_exists(id)"
+  }
+})
