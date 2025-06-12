@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth'; // Correct import for getCurrentUser
+import { getCurrentUser } from 'aws-amplify/auth';
 import {
   listLedgerEntries,
   listAccountStatuses,
