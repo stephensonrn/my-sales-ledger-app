@@ -19,33 +19,33 @@ enum CurrentAccountTransactionType {
 # --- Data Models ---
 type LedgerEntry {
   id: ID!
-  owner: String!
+  owner: String! # owner should be the user id (sub) or username depending on your schema
   type: LedgerEntryType!
   amount: Float!
   description: String
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String
+  createdByAdmin: String # Optional, could be null for non-admin created entries
 }
 
 type AccountStatus {
   id: ID!
-  owner: String!
+  owner: String! # Same as in LedgerEntry, use user id or username
   totalUnapprovedInvoiceValue: Float!
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String
+  createdByAdmin: String # Optional, null for non-admin created entries
 }
 
 type CurrentAccountTransaction {
   id: ID!
-  owner: String!
+  owner: String! # Same owner reference as other types
   type: CurrentAccountTransactionType!
   amount: Float!
   description: String
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
-  createdByAdmin: String
+  createdByAdmin: String # Optional for non-admin transactions
 }
 
 type UserAttribute {
@@ -55,7 +55,7 @@ type UserAttribute {
 
 type CognitoUser {
   username: String!
-  sub: String!
+  sub: String! # Sub should uniquely identify users in Cognito, useful for user reference
   status: String
   enabled: Boolean
   createdAt: AWSDateTime
@@ -117,11 +117,11 @@ input AdminCreateLedgerEntryInput {
   type: LedgerEntryType!
   amount: Float!
   description: String
-  targetUserId: ID!
+  targetUserId: ID! # This is the target user for the entry, usually the user id (sub)
 }
 
 input AdminRequestPaymentForUserInput {
-  targetUserId: ID!
+  targetUserId: ID! # This should be the user id (sub) of the target user
   amount: Float!
   paymentDescription: String
 }
