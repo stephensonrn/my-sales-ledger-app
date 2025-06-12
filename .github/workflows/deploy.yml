@@ -27,10 +27,15 @@ jobs:
 
       - name: 📦 Install backend dependencies
         run: |
-          cd backend
+          cd backend-cdk
           npm ci
+
+      - name: 🧱 Compile TypeScript
+        run: |
+          cd backend-cdk
+          npm run build
 
       - name: 🚀 Deploy CDK stack
         run: |
-          cd backend
+          cd backend-cdk
           npx cdk deploy --require-approval never
