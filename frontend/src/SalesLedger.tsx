@@ -1,13 +1,8 @@
 // src/SalesLedger.tsx
-
 import React, { useState, useEffect, useCallback } from 'react';
+import { generateClient } from 'aws-amplify/api';
+import { getCurrentUser } from 'aws-amplify/auth'; // Correct import for getCurrentUser
 
-// 1. Correct imports for AWS Amplify Gen 2 / v6+
-// No longer import from 'aws-amplify'
-import { generateClient } from '@aws-amplify/api'; // Correct import for API
-import { getCurrentUser } from 'aws-amplify/auth';
-
-// 2. Import your GraphQL queries, mutations, and subscriptions
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -21,31 +16,31 @@ import {
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 
-// 3. Define your data types (recommended for TypeScript)
-// Replace these properties with the actual fields from your Sales Ledger model.
-interface SalesLedgerEntry {
-  id: string;
-  customerName: string;
-  amount: number;
-  date: string;
-  // Other fields from your Sales Ledger model
-}
+import {
+  LedgerEntryType,
+  type LedgerEntry,
+  type AccountStatus,
+  type CurrentAccountTransaction,
+  type ListLedgerEntriesQuery,
+  type ListAccountStatusesQuery,
+  type ListCurrentAccountTransactionsQuery,
+  type AdminCreateLedgerEntryInput,
+  type AdminRequestPaymentForUserInput,
+  type SendPaymentRequestInput,
+  type AdminCreateLedgerEntryMutation,
+  type AdminRequestPaymentForUserMutation,
+  type SendPaymentRequestEmailMutation,
+  type OnCreateLedgerEntrySubscription,
+  type OnCreateLedgerEntrySubscriptionVariables,
+} from './graphql/API';
 
-interface AccountStatus {
-  totalUnapprovedInvoiceValue: number;
-  // Add other account status fields here
-}
-
-interface CurrentAccountTransaction {
-  id: string;
-  amount: number;
-  type: string;
-  date: string;
-  // Add other transaction fields here
-}
-
-// 4. Create the API client (using the new way to create an API client in AWS Amplify v6+)
-const client = generateClient();
+import CurrentBalance from './CurrentBalance';
+import LedgerEntryForm from './LedgerEntryForm';
+import LedgerHistory from './LedgerHistory';
+import AvailabilityDisplay from './AvailabilityDisplay';
+import PaymentRequestForm from './PaymentRequestForm';
+import ManageAccountStatus from './ManageAccountStatus'; // <-- Import ManageAccountStatus
+import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.90;
 
@@ -60,7 +55,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [userCompanyName, setUserCompanyName] = useState<string | null>(null);
   const [userIdForData, setUserIdForData] = useState<string | null>(null);
 
-  const [entries, setEntries] = useState<SalesLedgerEntry[]>([]);
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [currentSalesLedgerBalance, setCurrentSalesLedgerBalance] = useState(0);
 
@@ -86,11 +81,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   useEffect(() => {
     async function fetchUserDetails() {
       try {
-        const user = await Auth.currentAuthenticatedUser();
-        setLoggedInUserSub(user.attributes.sub);
+        const user = await getCurrentUser(); // Correctly fetching user with getCurrentUser
+        setLoggedInUserSub(user.username); // Adjusted to match current user object properties
         setUserEmail(user.attributes.email ?? null);
         setUserCompanyName(user.attributes['custom:companyName'] ?? null);
-        console.log("SalesLedger: User sub, email, company loaded:", user.attributes.sub, user.attributes.email, user.attributes['custom:companyName']);
+        console.log("SalesLedger: User sub, email, company loaded:", user.username, user.attributes.email, user.attributes['custom:companyName']);
       } catch (err) {
         console.error("SalesLedger: Error fetching user details:", err);
         setLoggedInUserSub(null);
@@ -129,11 +124,15 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await client.graphql({
+        const response = await generateClient().graphql({
           query: listLedgerEntries,
-          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
+          variables: {
+            filter: { owner: { eq: ownerId } },
+            nextToken,
+            limit: 50,
+          }
         });
-        const items = response.data?.listLedgerEntries?.items || [];
+        const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
         nextToken = response.data?.listLedgerEntries?.nextToken || undefined;
       } while (nextToken);
@@ -149,11 +148,15 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await client.graphql({
+        const response = await generateClient().graphql({
           query: listCurrentAccountTransactions,
-          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
+          variables: {
+            filter: { owner: { eq: ownerId } },
+            nextToken,
+            limit: 50,
+          }
         });
-        const items = response.data?.listCurrentAccountTransactions?.items || [];
+        const items = response.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
         allTransactions = [...allTransactions, ...items];
         nextToken = response.data?.listCurrentAccountTransactions?.nextToken || undefined;
       } while (nextToken);
@@ -168,14 +171,18 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setLoadingStatus(true);
     setError(null);
     try {
-      const response = await client.graphql({
+      const response = await generateClient().graphql({
         query: listAccountStatuses,
-        variables: { filter: { owner: { eq: ownerId } }, limit: 1 },
+        variables: {
+          filter: { owner: { eq: ownerId } },
+          limit: 1,
+        }
       });
-      const items = response.data?.listAccountStatuses?.items || [];
+      const items = response.data?.listAccountStatuses?.items?.filter(Boolean) as AccountStatus[] || [];
       setAccountStatus(items.length > 0 ? items[0] : null);
-    } catch (err) {
-      setError('Account status error: ' + (err.message || 'Unknown error.'));
+    } catch (err: any) {
+      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching account status.';
+      setError(`Account status error: ${errorMessages}`);
       setAccountStatus(null);
     } finally {
       setLoadingStatus(false);
@@ -197,10 +204,16 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         fetchInitialStatus(userIdForData),
       ]);
 
-      setEntries(allEntries);
-      setCurrentAccountTransactions(allTransactions);
-    } catch (err) {
-      setError('Data fetch error: ' + (err.message || 'Unknown error.'));
+      setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+      setCurrentAccountTransactions(allTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    } catch (err: any) {
+      const errorMessages = err.errors && Array.isArray(err.errors)
+        ? err.errors.map((e: any) => e.message).join(', ')
+        : err.message || 'Unknown error fetching sales ledger data.';
+      setError(`Data fetch error: ${errorMessages}`);
+      setEntries([]);
+      setCurrentAccountTransactions([]);
+      setAccountStatus(null);
     } finally {
       setLoadingEntries(false);
       setLoadingTransactions(false);
@@ -208,6 +221,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, [userIdForData, fetchAllLedgerEntries, fetchAllCurrentAccountTransactions, fetchInitialStatus]);
 
+  // Use centralized refresh function on userIdForData change
   useEffect(() => {
     refreshAllData();
   }, [userIdForData, refreshAllData]);
@@ -215,56 +229,98 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Subscription for new ledger entries
   useEffect(() => {
     if (!userIdForData) return;
-    const sub = client.graphql({
+    const sub = generateClient().graphql({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
+      authMode: 'AMAZON_COGNITO_USER_POOLS'
     });
 
     const subscription = sub.subscribe({
       next: ({ value }) => {
         const newEntry = value.data?.onCreateLedgerEntry;
-        if (newEntry) {
+        if (newEntry && newEntry.owner === userIdForData) {
           refreshAllData();
         }
       },
       error: (err) => {
-        setError("Subscription error: " + (err.message || 'Unknown error.'));
-      },
+        console.error("SalesLedger Subscription error:", err);
+        setError("Subscription error. Data may not be live.");
+      }
     });
     return () => subscription.unsubscribe();
   }, [userIdForData, refreshAllData]);
 
-  if (isLoading) {
-    return <div>Loading data...</div>;
+  // --- Render Logic ---
+  if (!loggedInUserSub && !targetUserId && !isAdmin) {
+    if (error && error.startsWith("Could not retrieve current user session")) {
+      return <Alert variation="error" heading="Session Error">{error}</Alert>;
+    }
+    return (<View padding="xl" textAlign="center"><Loader size="large" /> <Text>Initializing user session...</Text></View>);
   }
 
-  if (error) {
-    return <div style={{ color: 'red' }}>Error: {error}</div>;
+  if (isAdmin && !targetUserId) {
+    if (error) {
+      return <Alert variation="error" heading="Admin Page Error">{error}</Alert>;
+    }
+    return (<View padding="xl"><Alert variation="info">Please select a user from the list on the Admin Page to view their sales ledger details.</Alert></View>);
+  }
+
+  if (!userIdForData) {
+    if (error) {
+      return <Alert variation="error" heading="Error">{error}</Alert>;
+    }
+    return (<View padding="xl" textAlign="center"><Loader size="large" /><Text>Loading user context...</Text></View>);
+  }
+
+  if (error && !loadingEntries && !loadingStatus && !loadingTransactions) {
+    return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
+  }
+
+  if (loadingEntries || loadingStatus || loadingTransactions) {
+    return (<View padding="xl" textAlign="center"><Loader size="large" /> <Text>Loading data for {isAdmin && targetUserId ? `user ${targetUserId.substring(0, 8)}...` : 'you'}...</Text></View>);
   }
 
   return (
-    <div>
-      <h1>Sales Ledger</h1>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Customer</th>
-            <th>Amount</th>
-            <th>Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map(entry => (
-            <tr key={entry.id}>
-              <td>{entry.id}</td>
-              <td>{entry.customerName}</td>
-              <td>${entry.amount.toFixed(2)}</td>
-              <td>{new Date(entry.date).toLocaleDateString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{ padding: '20px' }}>
+      <h2>Sales Ledger {isAdmin && targetUserId && userIdForData === targetUserId ? `(Viewing User: ${targetUserId.substring(0, 8)}...)` : ''}</h2>
+
+      <CurrentBalance balance={currentSalesLedgerBalance} />
+      <AvailabilityDisplay
+        grossAvailability={grossAvailability}
+        netAvailability={netAvailability}
+        currentSalesLedgerBalance={currentSalesLedgerBalance}
+        totalUnapprovedInvoiceValue={accountStatus?.totalUnapprovedInvoiceValue ?? 0}
+        currentAccountBalance={calculatedCurrentAccountBalance}
+      />
+
+      {isAdmin && userIdForData && (
+        <ManageAccountStatus
+          selectedOwnerSub={userIdForData}
+          targetUserName={targetUserId ?? undefined}
+          onStatusUpdated={refreshAllData} // <-- Pass refresh callback here
+        />
+      )}
+
+      <PaymentRequestForm
+        netAvailability={netAvailability}
+        onSubmitRequest={handlePaymentRequest}
+        isLoading={paymentRequestLoading}
+        requestError={paymentRequestError}
+        requestSuccess={paymentRequestSuccess}
+      />
+
+      <LedgerEntryForm
+        onSubmit={handleAddLedgerEntry}
+      />
+
+      <div style={{ marginTop: '30px' }}>
+        <h3>Sales Ledger Transaction History</h3>
+        <LedgerHistory entries={entries} historyType="sales" isLoading={loadingEntries} />
+      </div>
+      <div style={{ marginTop: '30px' }}>
+        <h3>Current Account Transaction History</h3>
+        <LedgerHistory entries={currentAccountTransactions as any} historyType="account" isLoading={loadingTransactions} />
+      </div>
     </div>
   );
 }
