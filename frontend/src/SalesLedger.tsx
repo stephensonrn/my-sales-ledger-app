@@ -1,7 +1,7 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/api';
-import { Auth } from 'aws-amplify';
+import { generateClient } from '@aws-amplify/api-graphql';
+import { Auth } from '@aws-amplify/auth';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 
 import {

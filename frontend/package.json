@@ -8,9 +8,11 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-	"codegen": "graphql-codegen --config codegen.ts"
+    "codegen": "graphql-codegen --config codegen.ts"
   },
   "dependencies": {
+    "@aws-amplify/api-graphql": "^4.7.16",
+    "@aws-amplify/auth": "^6.13.0",
     "@aws-amplify/backend-function": "^1.14.0",
     "@aws-amplify/backend-graphql": "^0.3.2",
     "@aws-amplify/ui-react": "^6.11.1",
