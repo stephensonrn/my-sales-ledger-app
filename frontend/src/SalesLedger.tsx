@@ -19,7 +19,6 @@ import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 
 import {
   LedgerEntryType,
-  CurrentAccountTransactionType,
   type LedgerEntry,
   type AccountStatus,
   type CurrentAccountTransaction,
@@ -180,46 +179,42 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, []);
 
-  // Main data fetch effect for all three data sets with pagination for entries and transactions
-  useEffect(() => {
-    const fetchAllData = async () => {
-      if (!userIdForData) {
-        setEntries([]);
-        setAccountStatus(null);
-        setCurrentAccountTransactions([]);
-        setLoadingEntries(false);
-        setLoadingStatus(false);
-        setLoadingTransactions(false);
-        return;
-      }
-      setLoadingEntries(true);
-      setLoadingStatus(true);
-      setLoadingTransactions(true);
-      setError(null);
+  // Unified refresh function for all data sets
+  const refreshAllData = useCallback(async () => {
+    if (!userIdForData) return;
 
-      try {
-        const [allEntries, allTransactions] = await Promise.all([
-          fetchAllLedgerEntries(userIdForData),
-          fetchAllCurrentAccountTransactions(userIdForData),
-          fetchInitialStatus(userIdForData), // This sets accountStatus inside already
-        ]);
+    setLoadingEntries(true);
+    setLoadingStatus(true);
+    setLoadingTransactions(true);
+    setError(null);
 
-        setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-        setCurrentAccountTransactions(allTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-      } catch (err: any) {
-        const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching sales ledger data.';
-        setError(`Data fetch error: ${errorMessages}`);
-        setEntries([]);
-        setCurrentAccountTransactions([]);
-        setAccountStatus(null);
-      } finally {
-        setLoadingEntries(false);
-        setLoadingTransactions(false);
-        setLoadingStatus(false);
-      }
-    };
-    fetchAllData();
+    try {
+      const [allEntries, allTransactions] = await Promise.all([
+        fetchAllLedgerEntries(userIdForData),
+        fetchAllCurrentAccountTransactions(userIdForData),
+        fetchInitialStatus(userIdForData),
+      ]);
+      setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+      setCurrentAccountTransactions(allTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    } catch (err: any) {
+      const errorMessages = err.errors && Array.isArray(err.errors)
+        ? err.errors.map((e: any) => e.message).join(', ')
+        : err.message || 'Unknown error fetching sales ledger data.';
+      setError(`Data fetch error: ${errorMessages}`);
+      setEntries([]);
+      setCurrentAccountTransactions([]);
+      setAccountStatus(null);
+    } finally {
+      setLoadingEntries(false);
+      setLoadingTransactions(false);
+      setLoadingStatus(false);
+    }
   }, [userIdForData, fetchAllLedgerEntries, fetchAllCurrentAccountTransactions, fetchInitialStatus]);
+
+  // Fetch all data on userIdForData change
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
 
   // Subscription for new ledger entries
   useEffect(() => {
@@ -233,12 +228,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       next: ({ data }) => {
         const newEntry = data?.onCreateLedgerEntry;
         if (newEntry && newEntry.owner === userIdForData) {
-          // On new ledger entry, re-fetch everything to stay updated
           (async () => {
             try {
               const allEntries = await fetchAllLedgerEntries(userIdForData);
               setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-
               if (newEntry.type === LedgerEntryType.INVOICE) {
                 await fetchInitialStatus(userIdForData);
               }
@@ -256,7 +249,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     return () => sub.unsubscribe();
   }, [userIdForData, fetchAllLedgerEntries, fetchInitialStatus]);
 
-  // Calculate Current Sales Ledger Balance based on all entries
+  // Calculate Current Sales Ledger Balance
   useEffect(() => {
     let calculatedSLBalance = 0;
     entries.forEach(entry => {
@@ -271,7 +264,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
   }, [entries]);
 
-  // Calculate Current Account Balance based on all transactions
+  // Calculate Current Account Balance
   useEffect(() => {
     let calculatedAccBalance = 0;
     currentAccountTransactions.forEach(transaction => {
@@ -343,12 +336,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         });
       }
 
-      const updatedEntries = await fetchAllLedgerEntries(userIdForData!);
-      setEntries(updatedEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-
-      if (entryData.type === LedgerEntryType.INVOICE) {
-        await fetchInitialStatus(userIdForData!);
-      }
+      await refreshAllData();
     } catch (err: any) {
       const errorMessages = err.errors && Array.isArray(err.errors)
         ? err.errors.map((e: any) => e.message).join(', ')
@@ -419,9 +407,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         setPaymentRequestSuccess(result.data?.sendPaymentRequestEmail ?? 'Payment request submitted successfully!');
       }
 
-      const updatedTransactions = await fetchAllCurrentAccountTransactions(userIdForData!);
-      setCurrentAccountTransactions(updatedTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-
+      await refreshAllData();
     } catch (err: any) {
       const errorMessage = err.errors && Array.isArray(err.errors)
         ? err.errors.map((e: any) => e.message).join(", ")
