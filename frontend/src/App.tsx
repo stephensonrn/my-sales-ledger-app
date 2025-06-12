@@ -18,18 +18,18 @@ import aurumLogo from '/Aurum.png';
 // src/index.tsx
 import './aws-config'; // Add this line
 
-// --- Authenticator Customization Objects (Keep as is) ---
+// --- Authenticator Customization Objects ---
 const formFields = {
   signIn: {
     username: { label: 'Email:', placeholder: 'Enter your email', type: 'email' },
   },
   signUp: {
-     email: { order: 1 },
-     'custom:company_name': {
+    email: { order: 1 },
+    'custom:company_name': {
       label: "Company Name:", placeholder: "Enter your company name", isRequired: true, order: 2,
     },
-     password: { label: 'Password:', placeholder: 'Enter your password', order: 3 },
-     confirm_password: { label: 'Confirm Password:', placeholder: 'Please confirm your password', order: 4 }
+    password: { label: 'Password:', placeholder: 'Enter your password', order: 3 },
+    confirm_password: { label: 'Confirm Password:', placeholder: 'Please confirm your password', order: 4 }
   },
 };
 
@@ -43,13 +43,10 @@ const components = {
     );
   },
 };
-// --- End Authenticator Customization ---
-
 
 // --- New Component Rendered ONLY When Authenticated ---
 function AuthenticatedContent() {
   // Get user and signOut using the hook *inside* the component
-  // This is guaranteed to run only when authenticated
   const { user, signOut } = useAuthenticator((context) => [context.user, context.signOut]);
   // Call the admin check hook unconditionally at the top level here
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
@@ -73,7 +70,6 @@ function AuthenticatedContent() {
               <Button onClick={signOut} variation="primary" size="small">Sign Out</Button>
           )}
       </Flex>
-      {/* --- End Simplified Header --- */}
 
       {/* --- Main Content Area (Conditional Rendering) --- */}
       <main>
@@ -89,23 +85,15 @@ function AuthenticatedContent() {
           <SalesLedger />
         )}
       </main>
-      {/* --- End Main Content Area --- */}
     </View>
   );
 }
-
 
 // --- Main App Component ---
 function App() {
   return (
     // Authenticator handles sign-in/sign-up UI and state
     <Authenticator loginMechanisms={['email']} formFields={formFields} components={components}>
-      {/*
-        The Authenticator will render its default UI until login is successful.
-        Once successful, it will render its children. We render AuthenticatedContent,
-        which then safely calls the necessary hooks.
-        We no longer call hooks directly in the render prop function below.
-      */}
       <AuthenticatedContent />
     </Authenticator>
   );
