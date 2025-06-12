@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { API, graphqlOperation } from '@aws-amplify/api-graphql'; // Using API from Amplify
+import { API, graphqlOperation } from 'aws-amplify'; // Correct import for API
+import { Auth } from '@aws-amplify/auth';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
-import * as Auth from '@aws-amplify/auth';
 
 import {
   listLedgerEntries,
