@@ -1,7 +1,7 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
+import { getCurrentUser, Auth } from 'aws-amplify';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 
 import {
@@ -53,6 +53,8 @@ interface SalesLedgerProps {
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userCompanyName, setUserCompanyName] = useState<string | null>(null);
   const [userIdForData, setUserIdForData] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -77,20 +79,31 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch logged in user sub
+  // Fetch logged in user sub and attributes on mount
   useEffect(() => {
-    const fetchCurrentLoggedInUser = async () => {
+    async function fetchUserDetails() {
       try {
         const { userId: sub } = await getCurrentUser();
         setLoggedInUserSub(sub);
-        console.log("SalesLedger: Logged-in user sub:", sub);
+
+        // Fetch user attributes (email, company)
+        const user = await Auth.currentAuthenticatedUser();
+        setUserEmail(user.attributes?.email ?? null);
+
+        // Adjust this key if you store company differently
+        const companyAttr = user.attributes?.['custom:companyName'] ?? null;
+        setUserCompanyName(companyAttr);
+
+        console.log("SalesLedger: User sub, email, company loaded:", sub, user.attributes?.email, companyAttr);
       } catch (err) {
-        console.error("SalesLedger: Error fetching current logged-in user details:", err);
+        console.error("SalesLedger: Error fetching user details:", err);
         setLoggedInUserSub(null);
+        setUserEmail(null);
+        setUserCompanyName(null);
         setError("Could not retrieve current user session. Please ensure you are logged in.");
       }
-    };
-    fetchCurrentLoggedInUser();
+    }
+    fetchUserDetails();
   }, []);
 
   // Determine userId for data based on admin/non-admin and props
@@ -364,7 +377,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         const adminInput: AdminRequestPaymentForUserInput = {
           targetUserId: targetUserId,
           amount: amount,
-          paymentDescription: `Payment request for user ${targetUserId} initiated by admin ${loggedInUserSub}`,
+          paymentDescription: `Payment request for user ${targetUserId} with email address ${userEmail ?? "N/A"} and from ${userCompanyName ?? "Unknown Company"} initiated by admin ${loggedInUserSub}`,
         };
         const result = await client.graphql<AdminRequestPaymentForUserMutation>({
           query: adminRequestPaymentForUser,
@@ -380,8 +393,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         }
       } else {
         const toEmailValue = "ross@aurumif.com";
-        const subjectValue = `Payment Request - Amount: £${amount.toFixed(2)} from user ${loggedInUserSub}`;
-        const bodyValue = `User (sub: ${loggedInUserSub}) requested payment of £${amount.toFixed(2)}.`;
+        const subjectValue = `Payment Request - Amount: £${amount.toFixed(2)} from user ${userEmail ?? loggedInUserSub}`;
+        const bodyValue = `User (sub: ${loggedInUserSub}) with email address ${userEmail ?? "N/A"} and from ${userCompanyName ?? "Unknown Company"} requested payment of £${amount.toFixed(2)}.`;
 
         const input: SendPaymentRequestInput = {
           amount,
