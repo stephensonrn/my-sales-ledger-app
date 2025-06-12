@@ -32,7 +32,7 @@ import {
     type DeleteLedgerEntryMutationVariables,
     type AdminCreateLedgerEntryInput,
     type AdminRequestPaymentForUserInput,
-    type SendPaymentRequestInput, // Ensure this type includes toEmail, subject, body
+    type SendPaymentRequestInput,
     type OnCreateLedgerEntrySubscription,
     type OnCreateLedgerEntrySubscriptionVariables,
     type ListLedgerEntriesQuery,
@@ -52,7 +52,7 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-import { Loader, Text, Alert, View, Flex, Heading } from '@aws-amplify/ui-react'; // Added Flex and Heading here
+import { Loader, Text, Alert, View, Flex, Heading } from '@aws-amplify/ui-react';
 
 const client = generateClient();
 const ADVANCE_RATE = 0.90;
@@ -88,6 +88,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch current logged-in user sub
   useEffect(() => {
     const fetchCurrentLoggedInUser = async () => {
       try {
@@ -103,6 +104,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     fetchCurrentLoggedInUser();
   }, []);
 
+  // Determine userId for data fetching based on admin status and targetUserId
   useEffect(() => {
     console.log("SalesLedger: Determining userIdForData. isAdmin:", isAdmin, "targetUserId:", targetUserId, "loggedInUserSub:", loggedInUserSub);
     if (isAdmin && targetUserId) {
@@ -125,19 +127,40 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, [isAdmin, targetUserId, loggedInUserSub]);
 
+  // Helper function to fetch all ledger entries for a user with pagination
+  const fetchAllLedgerEntries = async (ownerId: string): Promise<LedgerEntry[]> => {
+    let allItems: LedgerEntry[] = [];
+    let nextToken: string | null = null;
+
+    do {
+      const response = await client.graphql<ListLedgerEntriesQuery>({
+        query: listLedgerEntries,
+        variables: {
+          filter: { owner: { eq: ownerId } },
+          limit: 100,
+          nextToken: nextToken || undefined
+        },
+        authMode: 'userPool'
+      });
+
+      if (response.errors) throw response.errors;
+
+      const items = response.data?.listLedgerEntries?.items?.filter(i => i !== null) || [];
+      allItems = allItems.concat(items);
+
+      nextToken = response.data?.listLedgerEntries?.nextToken || null;
+    } while (nextToken);
+
+    return allItems;
+  };
+
+  // Fetch all entries for initial load and after changes
   const fetchInitialEntries = useCallback(async (idToFetch: string) => {
     setLoadingEntries(true); setError(null);
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialEntries for user:", idToFetch);
     try {
-      const response = await client.graphql<ListLedgerEntriesQuery>({
-        query: listLedgerEntries,
-        variables: { filter: { owner: { eq: idToFetch } } },
-        authMode: 'userPool'
-      });
-      console.log("SalesLedger: ListLedgerEntries response:", response);
-      if (response.errors) throw response.errors;
-      const items = response.data?.listLedgerEntries?.items?.filter(item => item !== null) as LedgerEntry[] || [];
-      setEntries(items.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+      const allEntries = await fetchAllLedgerEntries(idToFetch);
+      setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     } catch (err: any) {
       console.error("SalesLedger: Ledger history error for user", idToFetch, err);
       const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching ledger history.';
@@ -145,6 +168,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     } finally { setLoadingEntries(false); }
   }, []);
 
+  // Fetch initial account status
   const fetchInitialStatus = useCallback(async (idToFetch: string) => {
     setLoadingStatus(true); setError(null);
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialStatus for user:", idToFetch);
@@ -165,6 +189,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     } finally { setLoadingStatus(false); }
   }, []);
 
+  // Fetch initial current account transactions (no pagination shown here, but can be added similarly)
   const fetchInitialTransactions = useCallback(async (idToFetch: string) => {
     setLoadingTransactions(true); setError(null);
     console.log("SALESLEDGER.TSX: Attempting to fetchInitialTransactions for user:", idToFetch);
@@ -185,6 +210,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     } finally { setLoadingTransactions(false); }
   }, []);
 
+  // Fetch data on userIdForData change
   useEffect(() => {
     console.log("SalesLedger: Data Fetch Effect triggered. userIdForData:", userIdForData);
     if (userIdForData) {
@@ -208,6 +234,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, [userIdForData, fetchInitialEntries, fetchInitialStatus, fetchInitialTransactions, isAdmin, loggedInUserSub, targetUserId]);
 
+  // Setup subscription for new ledger entries
   useEffect(() => {
     if (!userIdForData) {
         console.log("SalesLedger: No userIdForData, skipping subscription setup.");
@@ -239,6 +266,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     };
   }, [userIdForData, fetchInitialEntries, fetchInitialStatus]);
 
+  // Calculate current sales ledger balance based on entries
   useEffect(() => {
     let calculatedSLBalance = 0;
     entries.forEach(entry => {
@@ -251,26 +279,27 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
   }, [entries]);
 
-useEffect(() => {
-  let calculatedSLBalance = 0;
-  entries.forEach(entry => {
-    const type = (entry.type || '').toUpperCase();
-    const amount = parseFloat(entry.amount ?? 0);
-    if (type === 'INVOICE' || type === 'INCREASE_ADJUSTMENT') {
-      calculatedSLBalance += amount;
-    } else if (['CREDIT_NOTE', 'DECREASE_ADJUSTMENT', 'CASH_RECEIPT'].includes(type)) {
-      calculatedSLBalance -= amount;
-    }
-  });
-  setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
-}, [entries]);
+  // Calculate current account balance from transactions
+  useEffect(() => {
+    let calculatedAccBalance = 0;
+    currentAccountTransactions.forEach(transaction => {
+      if (transaction.type === CurrentAccountTransactionType.PAYMENT_REQUEST) {
+        calculatedAccBalance += transaction.amount;
+      } else if (transaction.type === CurrentAccountTransactionType.CASH_RECEIPT) {
+        calculatedAccBalance -= transaction.amount;
+      }
+    });
+    setCalculatedCurrentAccountBalance(parseFloat(calculatedAccBalance.toFixed(2)));
+  }, [currentAccountTransactions]);
 
+  // Calculate gross availability based on sales ledger balance and unapproved invoice value
   useEffect(() => {
     const unapprovedValue = accountStatus?.totalUnapprovedInvoiceValue ?? 0;
     const grossAvail = (currentSalesLedgerBalance - unapprovedValue) * ADVANCE_RATE;
     setGrossAvailTemp(grossAvail);
   }, [currentSalesLedgerBalance, accountStatus]);
 
+  // Calculate net availability by subtracting current account balance from gross availability
   useEffect(() => {
     const netAvail = grossAvailTemp - calculatedCurrentAccountBalance;
     setNetAvailTemp(netAvail);
@@ -279,6 +308,7 @@ useEffect(() => {
   useEffect(() => { setGrossAvailability(Math.max(0, parseFloat(grossAvailTemp.toFixed(2)))); }, [grossAvailTemp]);
   useEffect(() => { setNetAvailability(Math.max(0, parseFloat(netAvailTemp.toFixed(2)))); }, [netAvailTemp]);
 
+  // Function to handle adding a ledger entry (admin and non-admin)
   const handleAddLedgerEntry = async (entryData: { type: string, amount: number, description?: string }) => {
     if (!loggedInUserSub) { setError("Your session is invalid. Cannot add entry."); return; }
     if (!userIdForData && !isAdmin) { setError("User context not available for action."); return; }
@@ -330,20 +360,18 @@ useEffect(() => {
     }
   };
 
+  // Function to handle payment request
   const handlePaymentRequest = async (amount: number) => {
     if (!loggedInUserSub) { 
         setError("Your session is invalid. Cannot request payment."); 
-        setPaymentRequestLoading(false); // Also reset loading if returning early
+        setPaymentRequestLoading(false);
         return; 
     }
-    // Ensure userIdForData is available for non-admins or matches targetUserId for admins
     if (!userIdForData) {
         setError("User context for action is not available. Please select a user or ensure you are logged in.");
         setPaymentRequestLoading(false);
         return;
     }
-    // For admins, targetUserId must be set if they intend to act on behalf of someone.
-    // If isAdmin is true, and targetUserId is what they're acting on, userIdForData should equal targetUserId.
     if (isAdmin && (!targetUserId || targetUserId !== userIdForData)) {
         setError("Admin action: Target user context is unclear or does not match. Please select a user.");
         setPaymentRequestLoading(false);
@@ -375,10 +403,10 @@ useEffect(() => {
         } else {
             throw new Error(responseData?.message || "Admin payment request failed without specific message from backend.");
         }
-      } else { // Non-admin user requesting for themselves
+      } else {
         console.log(`SalesLedger: User (${loggedInUserSub}) requesting payment for themselves (acting for user ID: ${userIdForData}).`);
         
-        const toEmailValue = "ross@aurumif.com"; // Hardcoded as requested
+        const toEmailValue = "ross@aurumif.com";
         const subjectValue = `Payment Request - Amount: £${amount.toFixed(2)} from user ${loggedInUserSub}`;
         const bodyValue = `User (sub: ${loggedInUserSub}, acting for data of user ID: ${userIdForData}) has requested a payment of £${amount.toFixed(2)}. Thank you.`;
 
@@ -432,9 +460,9 @@ useEffect(() => {
       return ( <View padding="xl" textAlign="center"><Loader size="large" /><Text>Loading user context...</Text></View> )
   }
 
-   if (error && !loadingEntries && !loadingStatus && !loadingTransactions) { 
+  if (error && !loadingEntries && !loadingStatus && !loadingTransactions) { 
      return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
-   }
+  }
 
   if (loadingEntries || loadingStatus || loadingTransactions) {
     return ( <View padding="xl" textAlign="center"><Loader size="large" /> <Text>Loading data for {isAdmin && targetUserId ? `user ${targetUserId.substring(0,8)}...` : 'you'}...</Text></View> );
@@ -475,4 +503,5 @@ useEffect(() => {
     </div>
   );
 }
+
 export default SalesLedger;
