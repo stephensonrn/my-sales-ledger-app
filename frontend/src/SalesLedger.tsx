@@ -1,7 +1,7 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser, Auth } from 'aws-amplify';
+import { Auth } from 'aws-amplify';
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 
 import {
@@ -80,31 +80,25 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch logged in user sub and attributes on mount
-  useEffect(() => {
-    async function fetchUserDetails() {
-      try {
-        const { userId: sub } = await getCurrentUser();
-        setLoggedInUserSub(sub);
-
-        // Fetch user attributes (email, company)
-        const user = await Auth.currentAuthenticatedUser();
-        setUserEmail(user.attributes?.email ?? null);
-
-        // Adjust this key if you store company differently
-        const companyAttr = user.attributes?.['custom:companyName'] ?? null;
-        setUserCompanyName(companyAttr);
-
-        console.log("SalesLedger: User sub, email, company loaded:", sub, user.attributes?.email, companyAttr);
-      } catch (err) {
-        console.error("SalesLedger: Error fetching user details:", err);
-        setLoggedInUserSub(null);
-        setUserEmail(null);
-        setUserCompanyName(null);
-        setError("Could not retrieve current user session. Please ensure you are logged in.");
-      }
+useEffect(() => {
+  async function fetchUserDetails() {
+    try {
+      const user = await Auth.currentAuthenticatedUser();
+      setLoggedInUserSub(user.attributes.sub);
+      setUserEmail(user.attributes.email ?? null);
+      setUserCompanyName(user.attributes['custom:companyName'] ?? null);
+      console.log("SalesLedger: User sub, email, company loaded:", user.attributes.sub, user.attributes.email, user.attributes['custom:companyName']);
+    } catch (err) {
+      console.error("SalesLedger: Error fetching user details:", err);
+      setLoggedInUserSub(null);
+      setUserEmail(null);
+      setUserCompanyName(null);
+      setError("Could not retrieve current user session. Please ensure you are logged in.");
     }
-    fetchUserDetails();
-  }, []);
+  }
+  fetchUserDetails();
+}, []);
+
 
   // Determine userId for data based on admin/non-admin and props
   useEffect(() => {
