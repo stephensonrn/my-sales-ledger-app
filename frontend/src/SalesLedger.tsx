@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { generateClient } from '@aws-amplify/api-graphql'; // Using generateClient for GraphQL
+import { API, graphqlOperation } from '@aws-amplify/api-graphql'; // Using API from Amplify
 import type { ObservableSubscription } from '@aws-amplify/api-graphql';
 import * as Auth from '@aws-amplify/auth';
 
@@ -41,9 +41,6 @@ import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
 import ManageAccountStatus from './ManageAccountStatus'; // <-- Import ManageAccountStatus
 import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
-
-// Initialize the client for GraphQL
-const client = generateClient();
 
 const ADVANCE_RATE = 0.90;
 
@@ -127,10 +124,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await client.graphql({
-          query: listLedgerEntries,
-          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
-        }) as { data: ListLedgerEntriesQuery; errors?: any[] };
+        const response = await API.graphql(graphqlOperation(listLedgerEntries, {
+          filter: { owner: { eq: ownerId } },
+          nextToken,
+          limit: 50,
+        })) as { data: ListLedgerEntriesQuery; errors?: any[] };
         if (response.errors) throw response.errors;
         const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
@@ -148,10 +146,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     let nextToken: string | undefined = undefined;
     try {
       do {
-        const response = await client.graphql({
-          query: listCurrentAccountTransactions,
-          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
-        }) as { data: ListCurrentAccountTransactionsQuery; errors?: any[] };
+        const response = await API.graphql(graphqlOperation(listCurrentAccountTransactions, {
+          filter: { owner: { eq: ownerId } },
+          nextToken,
+          limit: 50,
+        })) as { data: ListCurrentAccountTransactionsQuery; errors?: any[] };
         if (response.errors) throw response.errors;
         const items = response.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
         allTransactions = [...allTransactions, ...items];
@@ -168,10 +167,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setLoadingStatus(true);
     setError(null);
     try {
-      const response = await client.graphql({
-        query: listAccountStatuses,
-        variables: { filter: { owner: { eq: ownerId } }, limit: 1 },
-      }) as { data: ListAccountStatusesQuery; errors?: any[] };
+      const response = await API.graphql(graphqlOperation(listAccountStatuses, {
+        filter: { owner: { eq: ownerId } },
+        limit: 1,
+      })) as { data: ListAccountStatusesQuery; errors?: any[] };
       if (response.errors) throw response.errors;
       const items = response.data?.listAccountStatuses?.items?.filter(Boolean) as AccountStatus[] || [];
       setAccountStatus(items.length > 0 ? items[0] : null);
@@ -224,10 +223,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Subscription for new ledger entries
   useEffect(() => {
     if (!userIdForData) return;
-    const sub = client.graphql.subscribe({
+    const sub = API.graphql({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
-    });
+      authMode: 'AMAZON_COGNITO_USER_POOLS'
+    }) as ObservableSubscription<OnCreateLedgerEntrySubscription, OnCreateLedgerEntrySubscriptionVariables>;
 
     const subscription = sub.subscribe({
       next: ({ value }) => {
@@ -243,168 +243,6 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     });
     return () => subscription.unsubscribe();
   }, [userIdForData, refreshAllData]);
-
-  // Calculate Current Sales Ledger Balance based on all entries
-  useEffect(() => {
-    let calculatedSLBalance = 0;
-    entries.forEach(entry => {
-      const type = (entry.type || '').toUpperCase();
-      const amount = parseFloat(entry.amount ?? 0);
-      if (type === 'INVOICE' || type === 'INCREASE_ADJUSTMENT') {
-        calculatedSLBalance += amount;
-      } else if (['CREDIT_NOTE', 'DECREASE_ADJUSTMENT', 'CASH_RECEIPT'].includes(type)) {
-        calculatedSLBalance -= amount;
-      }
-    });
-    setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
-  }, [entries]);
-
-  // Calculate Current Account Balance based on all transactions
-  useEffect(() => {
-    let calculatedAccBalance = 0;
-    currentAccountTransactions.forEach(transaction => {
-      const type = (transaction.type || '').toUpperCase();
-      const amount = parseFloat(transaction.amount ?? 0);
-      if (type === 'PAYMENT_REQUEST') {
-        calculatedAccBalance += amount;
-      } else if (type === 'CASH_RECEIPT') {
-        calculatedAccBalance -= amount;
-      }
-    });
-    setCalculatedCurrentAccountBalance(parseFloat(calculatedAccBalance.toFixed(2)));
-  }, [currentAccountTransactions]);
-
-  // Calculate gross and net availability
-  useEffect(() => {
-    const unapprovedValue = accountStatus?.totalUnapprovedInvoiceValue ?? 0;
-    const grossAvail = (currentSalesLedgerBalance - unapprovedValue) * ADVANCE_RATE;
-    setGrossAvailTemp(grossAvail);
-  }, [currentSalesLedgerBalance, accountStatus]);
-
-  useEffect(() => {
-    const netAvail = grossAvailTemp - calculatedCurrentAccountBalance;
-    setNetAvailTemp(netAvail);
-  }, [grossAvailTemp, calculatedCurrentAccountBalance]);
-
-  useEffect(() => { setGrossAvailability(Math.max(0, parseFloat(grossAvailTemp.toFixed(2)))); }, [grossAvailTemp]);
-  useEffect(() => { setNetAvailability(Math.max(0, parseFloat(netAvailTemp.toFixed(2)))); }, [netAvailTemp]);
-
-  // Handler to add ledger entries
-  const handleAddLedgerEntry = async (entryData: { type: string; amount: number; description?: string }) => {
-    if (!loggedInUserSub) {
-      setError("Your session is invalid. Cannot add entry.");
-      return;
-    }
-    if (!userIdForData && !isAdmin) {
-      setError("User context not available for action.");
-      return;
-    }
-    if (isAdmin && !targetUserId && !userIdForData) {
-      setError("No target user selected by admin for action.");
-      return;
-    }
-
-    setError(null);
-    try {
-      if (isAdmin && targetUserId && targetUserId === userIdForData) {
-        const adminInput: AdminCreateLedgerEntryInput = {
-          type: entryData.type as LedgerEntryType,
-          amount: entryData.amount,
-          description: entryData.description || undefined,
-          targetUserId: targetUserId,
-        };
-        await client.graphql({
-          query: adminCreateLedgerEntry,
-          variables: { input: adminInput },
-        });
-      } else {
-        const input = {
-          type: entryData.type as LedgerEntryType,
-          amount: entryData.amount,
-          description: entryData.description || undefined,
-        };
-        await client.graphql({
-          query: createLedgerEntry,
-          variables: { input },
-        });
-      }
-
-      await refreshAllData();
-
-    } catch (err: any) {
-      const errorMessages = err.errors && Array.isArray(err.errors)
-        ? err.errors.map((e: any) => e.message).join(', ')
-        : err.message || 'Unknown error while adding entry.';
-      setError(`Failed to save transaction: ${errorMessages}`);
-    }
-  };
-
-  // Handler to submit payment requests
-  const handlePaymentRequest = async (amount: number) => {
-    if (!loggedInUserSub) {
-      setError("Your session is invalid. Cannot request payment.");
-      setPaymentRequestLoading(false);
-      return;
-    }
-    if (!userIdForData) {
-      setError("User context for action is not available.");
-      setPaymentRequestLoading(false);
-      return;
-    }
-    if (isAdmin && (!targetUserId || targetUserId !== userIdForData)) {
-      setError("Admin action: Target user context is unclear or does not match.");
-      setPaymentRequestLoading(false);
-      return;
-    }
-
-    setPaymentRequestLoading(true);
-    setPaymentRequestError(null);
-    setPaymentRequestSuccess(null);
-
-    try {
-      if (isAdmin && targetUserId && targetUserId === userIdForData) {
-        const adminInput: AdminRequestPaymentForUserInput = {
-          targetUserId: targetUserId,
-          amount: amount,
-          paymentDescription: `Payment request for user ${targetUserId} with email address ${userEmail ?? "N/A"} and from ${userCompanyName ?? "Unknown Company"} initiated by admin ${loggedInUserSub}`,
-        };
-        const result = await client.graphql<AdminRequestPaymentForUserMutation>(graphqlOperation(adminRequestPaymentForUser, { input: adminInput }));
-        if (result.errors) throw result.errors;
-        const responseData = result.data?.adminRequestPaymentForUser;
-        if (responseData?.success) {
-          setPaymentRequestSuccess(responseData.message || `Admin: Payment request submitted successfully! Transaction ID: ${responseData.transactionId || 'N/A'}`);
-        } else {
-          throw new Error(responseData?.message || "Admin payment request failed.");
-        }
-      } else {
-        const toEmailValue = "ross@aurumif.com";
-        const subjectValue = `Payment Request - Amount: £${amount.toFixed(2)} from user ${userEmail ?? loggedInUserSub}`;
-        const bodyValue = `User (sub: ${loggedInUserSub}) with email address ${userEmail ?? "N/A"} and from ${userCompanyName ?? "Unknown Company"} requested payment of £${amount.toFixed(2)}.`;
-
-        const input: SendPaymentRequestInput = {
-          amount,
-          toEmail: toEmailValue,
-          subject: subjectValue,
-          body: bodyValue,
-        };
-
-        const result = await client.graphql<SendPaymentRequestEmailMutation>(graphqlOperation(sendPaymentRequestEmail, { input }));
-        if (result.errors) throw result.errors;
-        setPaymentRequestSuccess(result.data?.sendPaymentRequestEmail ?? 'Payment request submitted successfully!');
-      }
-
-      await refreshAllData();
-
-    } catch (err: any) {
-      const errorMessage = err.errors && Array.isArray(err.errors)
-        ? err.errors.map((e: any) => e.message).join(", ")
-        : err.message || 'Unknown error processing payment request.';
-      setPaymentRequestError(`Failed to submit payment request: ${errorMessage}`);
-      setPaymentRequestSuccess(null);
-    } finally {
-      setPaymentRequestLoading(false);
-    }
-  };
 
   // --- Render Logic ---
   if (!loggedInUserSub && !targetUserId && !isAdmin) {
