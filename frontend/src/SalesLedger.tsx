@@ -59,18 +59,15 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Ensure user is authenticated before making requests
   const ensureAuth = async () => {
     try {
-      const user = await getCurrentUser(); // Ensure the user is logged in
-      if (!user) {
-        throw new Error('No authenticated user');
+      const user = await getCurrentUser();
+      if (user) {
+        return user;
       }
-      const idToken = user.signInUserSession?.idToken?.jwtToken; // Extract the token safely
-      console.log('Authenticated with token:', idToken);
-      return user;
     } catch (error) {
       console.error('User not authenticated:', error);
       setError("Could not retrieve current user session. Please ensure you are logged in.");
-      return null;
     }
+    return null;
   };
 
   // Fetch logged-in user details
@@ -79,8 +76,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       const user = await ensureAuth(); // Ensure user is authenticated
       if (user) {
         setLoggedInUserSub(user.username);
-        setUserEmail(user.attributes.email ?? null);
-        setUserCompanyName(user.attributes['custom:company_name'] ?? null);
+        setUserEmail(user.attributes?.email ?? null); // Optional chaining to ensure it's not undefined
+        setUserCompanyName(user.attributes?.['custom:company_name'] ?? null); // Optional chaining
       }
     }
     fetchUserDetails();
@@ -111,15 +108,15 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             limit: 50,
           }
         });
-        const items = response.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
+        const items = response?.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
-        nextToken = response.data?.listLedgerEntries?.nextToken || undefined;
+        nextToken = response?.data?.listLedgerEntries?.nextToken || undefined;
       } while (nextToken);
       return allEntries;
     } catch (err) {
       console.error("Error in fetchAllLedgerEntries:", err);
       setError("Failed to load ledger entries.");
-      throw err; // Re-throw to be caught by the calling useEffect
+      throw err;
     }
   }, [client]); // client is a dependency
 
@@ -143,7 +140,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         query: listAccountStatuses,
         variables: { owner: userIdForData, limit: 1 }
       });
-      const statusItem = statusResponse.data?.listAccountStatuses?.items?.[0] || null;
+      const statusItem = statusResponse?.data?.listAccountStatuses?.items?.[0] || null;
       setAccountStatus(statusItem);
     } catch (err) {
       setError("Failed to load account status.");
@@ -157,7 +154,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         query: listCurrentAccountTransactions,
         variables: { filter: { owner: { eq: userIdForData } } }
       });
-      const transactionItems = transactionsResponse.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
+      const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
       setCurrentAccountTransactions(transactionItems);
     } catch (err) {
       setError("Failed to load account transactions.");
@@ -221,8 +218,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         return;
       }
       const input: AdminCreateLedgerEntryInput = {
-        amount: newEntry.amount,
-        description: newEntry.description,
+        amount: newEntry.amount || 0,  // Default to 0 if undefined
+        description: newEntry.description || '', // Default to empty string if undefined
         type: newEntry.type,
         targetUserId: userIdForData,
       };
