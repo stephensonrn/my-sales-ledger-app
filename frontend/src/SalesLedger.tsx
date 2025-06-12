@@ -179,9 +179,17 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }
   }, []);
 
-  // Unified refresh function for all data sets
+  // Centralized refresh function
   const refreshAllData = useCallback(async () => {
-    if (!userIdForData) return;
+    if (!userIdForData) {
+      setEntries([]);
+      setAccountStatus(null);
+      setCurrentAccountTransactions([]);
+      setLoadingEntries(false);
+      setLoadingStatus(false);
+      setLoadingTransactions(false);
+      return;
+    }
 
     setLoadingEntries(true);
     setLoadingStatus(true);
@@ -194,12 +202,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         fetchAllCurrentAccountTransactions(userIdForData),
         fetchInitialStatus(userIdForData),
       ]);
+
       setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
       setCurrentAccountTransactions(allTransactions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     } catch (err: any) {
-      const errorMessages = err.errors && Array.isArray(err.errors)
-        ? err.errors.map((e: any) => e.message).join(', ')
-        : err.message || 'Unknown error fetching sales ledger data.';
+      const errorMessages = err.errors && Array.isArray(err.errors) ? err.errors.map((e: any) => e.message).join(', ') : err.message || 'Unknown error fetching sales ledger data.';
       setError(`Data fetch error: ${errorMessages}`);
       setEntries([]);
       setCurrentAccountTransactions([]);
@@ -214,7 +221,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   // Fetch all data on userIdForData change
   useEffect(() => {
     refreshAllData();
-  }, [refreshAllData]);
+  }, [userIdForData, refreshAllData]);
 
   // Subscription for new ledger entries
   useEffect(() => {
@@ -228,17 +235,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       next: ({ data }) => {
         const newEntry = data?.onCreateLedgerEntry;
         if (newEntry && newEntry.owner === userIdForData) {
-          (async () => {
-            try {
-              const allEntries = await fetchAllLedgerEntries(userIdForData);
-              setEntries(allEntries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-              if (newEntry.type === LedgerEntryType.INVOICE) {
-                await fetchInitialStatus(userIdForData);
-              }
-            } catch (err) {
-              console.error("Subscription update fetch error", err);
-            }
-          })();
+          // On new ledger entry, refresh all data
+          refreshAllData().catch(err => console.error("Subscription update fetch error", err));
         }
       },
       error: (err) => {
@@ -247,9 +245,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
       }
     });
     return () => sub.unsubscribe();
-  }, [userIdForData, fetchAllLedgerEntries, fetchInitialStatus]);
+  }, [userIdForData, refreshAllData]);
 
-  // Calculate Current Sales Ledger Balance
+  // Calculate Current Sales Ledger Balance based on all entries
   useEffect(() => {
     let calculatedSLBalance = 0;
     entries.forEach(entry => {
@@ -264,7 +262,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     setCurrentSalesLedgerBalance(parseFloat(calculatedSLBalance.toFixed(2)));
   }, [entries]);
 
-  // Calculate Current Account Balance
+  // Calculate Current Account Balance based on all transactions
   useEffect(() => {
     let calculatedAccBalance = 0;
     currentAccountTransactions.forEach(transaction => {
