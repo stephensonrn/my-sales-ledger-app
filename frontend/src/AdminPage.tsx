@@ -1,6 +1,7 @@
 // src/AdminPage.tsx
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/api';
+import { type User } from 'aws-amplify/auth'; // <--- IMPORT User type
 import {
   Flex,
   Heading,
@@ -14,14 +15,11 @@ import {
 } from '@aws-amplify/ui-react';
 
 // --- CORRECTED IMPORTS ---
-// Operation Documents from src/graphql/operations/
-import { adminListUsers } from './graphql/operations/queries'; 
-
-// Types from src/graphql/API.ts
-import type { CognitoUser, AdminListUsersQuery } from './graphql/API';   
+import { adminListUsers } from './graphql/operations/queries';
+import type { CognitoUser, AdminListUsersQuery } from './graphql/API';
 // --- END CORRECTED IMPORTS ---
 
-// Import child components (assuming they are in the same src/ directory)
+// Import child components
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
 import SalesLedger from './SalesLedger';
@@ -29,7 +27,11 @@ import SalesLedger from './SalesLedger';
 const client = generateClient();
 const USERS_PER_PAGE = 10;
 
-function AdminPage() {
+interface AdminPageProps {
+  loggedInUser: User; // <--- ADDED PROP
+}
+
+function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
   const [users, setUsers] = useState<CognitoUser[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
@@ -40,15 +42,15 @@ function AdminPage() {
     if (isLoadingUsers && !token) return;
     setIsLoadingUsers(true);
     setFetchError(null);
-    if (!token) { 
-        setSelectedUser(null); 
-        setUsers([]);
+    if (!token) {
+      setSelectedUser(null);
+      setUsers([]);
     }
 
     console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
-      const response = await client.graphql<AdminListUsersQuery>({ 
-        query: adminListUsers, // Use the imported document
+      const response = await client.graphql<AdminListUsersQuery>({
+        query: adminListUsers,
         variables: {
           limit: USERS_PER_PAGE,
           nextToken: token
@@ -140,7 +142,7 @@ function AdminPage() {
                     </tr>
                   );
               })}
-              {isLoadingUsers && users.length === 0 && (
+              {isLoadingUsers && users.length > 0 && (
                   <tr key="loader-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td></tr>
               )}
             </tbody>
@@ -149,40 +151,41 @@ function AdminPage() {
         {nextToken && !isLoadingUsers && (
           <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
-         {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>}
+          {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>}
       </Card>
 
       <View marginTop="large">
         {selectedUser && selectedUser.sub ? (
           <>
             <Heading level={3} marginBottom="medium">
-              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username} 
+              Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username}
               <Text as="span" fontSize="small" color="font.tertiary"> (ID: {selectedUser.sub})</Text>
             </Heading>
-            
+
             <Flex direction="column" gap="large">
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
-                <ManageAccountStatus 
-                    selectedOwnerSub={selectedUser.sub} 
-                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub} 
+                <ManageAccountStatus
+                    selectedOwnerSub={selectedUser.sub}
+                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub}
+                    loggedInUser={loggedInUser} // <--- ADDED PROP
                 />
               </Card>
-              
+
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
-                <AddCashReceiptForm 
-                  selectedTargetSub={selectedUser.sub} 
-                  // Optional: Add a callback if AdminPage needs to react to cash receipt addition
-                  // onCashReceiptAdded={() => fetchUsers()} // Example: Refresh user list or other data
+                <AddCashReceiptForm
+                  selectedTargetSub={selectedUser.sub}
+                  loggedInUser={loggedInUser} // <--- ADDED PROP
                 />
               </Card>
 
               <Card variation="elevated" marginTop="medium">
                 <Heading level={4} marginBottom="small">Ledger Details</Heading>
-                <SalesLedger 
-                  targetUserId={selectedUser.sub} 
-                  isAdmin={true} 
+                <SalesLedger
+                  targetUserId={selectedUser.sub}
+                  isAdmin={true}
+                  loggedInUser={loggedInUser} // <--- ADDED PROP
                 />
               </Card>
             </Flex>
@@ -194,4 +197,5 @@ function AdminPage() {
     </Flex>
   );
 }
+
 export default AdminPage;

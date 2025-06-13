@@ -1,6 +1,7 @@
+// src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
+// REMOVE: import { getCurrentUser } from 'aws-amplify/auth'; // No longer needed directly here
 import {
     listLedgerEntries,
     listAccountStatuses,
@@ -21,6 +22,7 @@ import {
     type AdminCreateLedgerEntryInput,
     type SendPaymentRequestInput
 } from './graphql/API';
+import { type User } from 'aws-amplify/auth'; // <--- IMPORT User type
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
@@ -34,15 +36,16 @@ const ADVANCE_RATE = 0.90;
 interface SalesLedgerProps {
     targetUserId?: string | null;
     isAdmin?: boolean;
+    loggedInUser: User; // <--- ADDED REQUIRED PROP
 }
 
-function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
-    const client = generateClient(); // Initialize client once per component instance
+function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedgerProps) { // <--- ACCEPT PROP
+    const client = generateClient();
 
-    const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(null);
-    const [userEmail, setUserEmail] = useState<string | null>(null);
-    const [userCompanyName, setUserCompanyName] = useState<string | null>(null);
-    const [userIdForData, setUserIdForData] = useState<string | null>(null);
+    const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username); // <--- INITIALIZE WITH PROP
+    const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null); // <--- INITIALIZE WITH PROP
+    const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null); // <--- INITIALIZE WITH PROP
+    const [userIdForData, setUserIdForData] = useState<string | null>(null); // This will be set in its useEffect
 
     const [entries, setEntries] = useState<LedgerEntry[]>([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
@@ -56,43 +59,11 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Ensure user is authenticated before making requests
-    const ensureAuth = async () => {
-        try {
-            const user = await getCurrentUser();
-            // Only proceed if user is not null/undefined AND has a signInUserSession
-            if (user && user.signInUserSession) { // <--- MODIFIED LINE
-                const idToken = user.signInUserSession.idToken?.jwtToken; // Optional chaining for idToken is good
-                console.log('Authenticated with token:', idToken);
-                return user;
-            } else {
-                // Log specific reason if not authenticated
-                console.error('User not authenticated: No active session found or invalid session.');
-                setError("Could not retrieve current user session. Please ensure you are logged in.");
-                return null; // Explicitly return null if authentication is not successful
-            }
-        } catch (error) {
-            // This catches actual errors thrown by getCurrentUser() (e.g., network issues)
-            console.error('User not authenticated: Failed to get user or session, or session is invalid:', error);
-            setError("Could not retrieve current user session. Please ensure you are logged in.");
-            return null;
-        }
-    };
-
-    // Fetch logged-in user details
-    useEffect(() => {
-        async function fetchUserDetails() {
-            const user = await ensureAuth(); // Ensure user is authenticated
-            if (user) { // user will be null if ensureAuth fails
-                setLoggedInUserSub(user.username);
-                setUserEmail(user.attributes?.email ?? null);
-                setUserCompanyName(user.attributes?.['custom:company_name'] ?? null); // Corrected custom attribute name
-            }
-        }
-        fetchUserDetails();
-    }, []);
+    // REMOVE THE ensureAuth function and its useEffect call related to fetchUserDetails
+    // You now rely on loggedInUser prop
 
     // Determine userIdForData based on admin status or logged-in user
+    // This useEffect will still run and correctly set userIdForData
     useEffect(() => {
         console.log("SalesLedger: Determining userIdForData. isAdmin:", isAdmin, "targetUserId:", targetUserId, "loggedInUserSub:", loggedInUserSub);
         if (isAdmin && targetUserId) {
@@ -103,9 +74,10 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             setUserIdForData(loggedInUserSub);
         } else {
             console.log("SalesLedger: userIdForData remains null or undefined.");
-            setUserIdForData(null); // Explicitly ensure it's null if no valid user ID
+            setUserIdForData(null);
         }
     }, [isAdmin, targetUserId, loggedInUserSub]);
+
 
     // Function to fetch all ledger entries (paginated)
     const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
@@ -129,9 +101,9 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         } catch (err) {
             console.error("Error in fetchAllLedgerEntries:", err);
             setError("Failed to load ledger entries.");
-            throw err; // Re-throw to be caught by the calling useEffect
+            throw err;
         }
-    }, [client]); // client is a dependency
+    }, [client]);
 
     // Function to refresh all data - useful after mutations
     const refreshAllData = useCallback(async () => {
@@ -174,7 +146,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         } finally {
             setLoadingTransactions(false);
         }
-    }, [userIdForData, fetchAllLedgerEntries, client]); // Dependencies for useCallback
+    }, [userIdForData, fetchAllLedgerEntries, client]);
 
     // Initial data fetch effect
     useEffect(() => {
@@ -199,7 +171,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
         });
 
-        return () => sub.unsubscribe(); // Unsubscribe when component unmounts
+        return () => sub.unsubscribe();
     }, [userIdForData, client]);
 
     const handlePaymentRequest = async () => {
@@ -208,10 +180,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         setPaymentRequestSuccess(null);
         try {
             if (!userEmail) throw new Error("User email is not available for payment request.");
-            const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0; // Example calculation
-            if (amountToRequest <= 0) {
-                 throw new Error("Calculated amount for payment request is zero or negative.");
-            }
+            const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
+            if (amountToRequest <= 0) throw new Error("Calculated amount for payment request is zero or negative.");
 
             const input: SendPaymentRequestInput = {
                 amount: amountToRequest,
