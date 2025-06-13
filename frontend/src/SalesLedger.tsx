@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth'; // Keep this one for getCurrentUser() if needed elsewhere in the app for type inference
-// REMOVE THIS LINE: import { Auth } from 'aws-amplify/auth'; // <--- REMOVE THIS BREAKING IMPORT
+import { Auth } from 'aws-amplify'; // Import Auth for session management
 import {
     listLedgerEntries,
     listAccountStatuses,
@@ -22,7 +21,7 @@ import {
     type AdminCreateLedgerEntryInput,
     type SendPaymentRequestInput
 } from './graphql/API';
-import { type User } from 'aws-amplify/auth'; // <--- IMPORT User type
+import { type User } from 'aws-amplify/auth'; // Import User type
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
@@ -46,7 +45,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
     const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
     const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
-    const [userIdForData, setUserIdForData] = useState<string | null>(null); // This will be set in its useEffect
+    const [userIdForData, setUserIdForData] = useState<string | null>(null); // Will be set in its useEffect
 
     const [entries, setEntries] = useState<LedgerEntry[]>([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
@@ -59,6 +58,21 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
     const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    // Function to ensure session is valid before making any requests
+    const checkSession = async () => {
+        try {
+            const session = await Auth.currentSession(); // Get the current session
+            if (!session || !session.getIdToken().getJwtToken()) {
+                setError("Session expired. Please log in again.");
+                return false;
+            }
+            return true;
+        } catch (error) {
+            setError("Could not fetch session. Please log in again.");
+            return false;
+        }
+    };
 
     // Determine userIdForData based on admin status or logged-in user
     useEffect(() => {
@@ -79,8 +93,10 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
         let allEntries: LedgerEntry[] = [];
         let nextToken: string | undefined = undefined;
+
+        if (!(await checkSession())) return []; // Check if the session is valid before proceeding
+
         try {
-            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
             do {
                 const response = await client.graphql({
                     query: listLedgerEntries,
@@ -89,7 +105,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
                         nextToken,
                         limit: 50,
                     },
-                    authMode: 'userPool' // <-- KEEP: This is still important for AppSync to use Cognito tokens
+                    authMode: 'userPool' // Explicitly use userPool authentication mode
                 });
                 const items = response?.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
                 allEntries = [...allEntries, ...items];
@@ -100,9 +116,9 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             console.error("Error in fetchAllLedgerEntries:", err);
             // Refine error message for auth issues
             if (err instanceof Error && err.message.includes("NoValidAuthTokens") || err instanceof Error && err.message.includes("Not Authorized")) {
-                 setError("Authentication required for data access. Please re-login.");
+                setError("Authentication required for data access. Please re-login.");
             } else {
-                 setError("Failed to load ledger entries: " + (err as Error).message);
+                setError("Failed to load ledger entries: " + (err as Error).message);
             }
             throw err;
         }
@@ -110,9 +126,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     // Function to refresh all data - useful after mutations
     const refreshAllData = useCallback(async () => {
-        if (!userIdForData) return;
-
-        // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
+        if (!userIdForData || !(await checkSession())) return; // Ensure session is valid
 
         setLoadingEntries(true);
         try {
@@ -129,7 +143,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             const statusResponse = await client.graphql({
                 query: listAccountStatuses,
                 variables: { owner: userIdForData, limit: 1 },
-                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
+                authMode: 'userPool' // Explicitly set authMode
             });
             const statusItem = statusResponse?.data?.listAccountStatuses?.items?.[0] || null;
             setAccountStatus(statusItem);
@@ -144,7 +158,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             const transactionsResponse = await client.graphql({
                 query: listCurrentAccountTransactions,
                 variables: { filter: { owner: { eq: userIdForData } } },
-                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
+                authMode: 'userPool' // Explicitly set authMode
             });
             const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
             setCurrentAccountTransactions(transactionItems);
@@ -153,7 +167,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         } finally {
             setLoadingTransactions(false);
         }
-    }, [userIdForData, fetchAllLedgerEntries, client]); // Dependencies for useCallback
+    }, [userIdForData, fetchAllLedgerEntries, client]);
 
     // Initial data fetch effect
     useEffect(() => {
@@ -163,12 +177,12 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     // Subscription setup
     useEffect(() => {
-        if (!userIdForData) return;
+        if (!userIdForData || !(checkSession())) return; // Ensure session is valid before subscribing
         console.log(`SalesLedger: Setting up subscription for owner: ${userIdForData}`);
         const sub = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: userIdForData },
-            authMode: 'userPool' // <-- KEEP: Explicitly set authMode
+            authMode: 'userPool' // Explicitly set authMode
         }).subscribe({
             next: ({ data }) => {
                 const newEntry = data.onCreateLedgerEntry;
@@ -187,12 +201,12 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         setPaymentRequestError(null);
         setPaymentRequestSuccess(null);
         try {
-            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
+            if (!(await checkSession())) return; // Ensure session is valid before proceeding
 
             if (!userEmail) throw new Error("User email is not available for payment request.");
             const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
             if (amountToRequest <= 0) {
-                 throw new Error("Calculated amount for payment request is zero or negative.");
+                throw new Error("Calculated amount for payment request is zero or negative.");
             }
 
             const input: SendPaymentRequestInput = {
@@ -202,7 +216,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             await client.graphql({
                 query: sendPaymentRequestEmail,
                 variables: { input },
-                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
+                authMode: 'userPool' // Explicitly set authMode
             });
             setPaymentRequestSuccess("Payment request sent successfully!");
         } catch (error) {
@@ -215,7 +229,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
         try {
-            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
+            if (!(await checkSession())) return; // Ensure session is valid before proceeding
 
             if (!userIdForData) {
                 setError("Cannot add entry: User ID for data not available.");
@@ -230,7 +244,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             await client.graphql({
                 query: adminCreateLedgerEntry,
                 variables: { input },
-                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
+                authMode: 'userPool' // Explicitly set authMode
             });
             refreshAllData();
         } catch (err) {
@@ -264,7 +278,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         <View className="sales-ledger-container">
             <h2>Sales Ledger for {userCompanyName || 'Your Business'}</h2>
 
-            {/* Pass actual balance to CurrentBalance with null-safe access */}
             <CurrentBalance balance={accountStatus?.totalUnapprovedInvoiceValue || 0} />
 
             <AvailabilityDisplay
