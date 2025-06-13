@@ -28,6 +28,9 @@ cdk.context.json
 !backend-cdk/**/*.js
 !backend-cdk/**/*.js.map
 
+# Whitelist aws-exports.js in src/
+!src/aws-exports.js
+
 # Lambda handlers (if using separate package.json in each)
 lambda-handlers/**/node_modules/
 lambda-handlers/**/*.zip
@@ -67,7 +70,7 @@ amplify/backend/amplify-meta.json
 amplify/backend/.temp/
 
 # Amplify config/build files (auto-generated, do not commit)
-aws-exports.js
+# aws-exports.js
 awsconfiguration.json
 amplifyconfiguration.json
 amplifyconfiguration.dart
