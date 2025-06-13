@@ -60,17 +60,20 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     const ensureAuth = async () => {
         try {
             const user = await getCurrentUser();
+            // Only proceed if user is not null/undefined AND has a signInUserSession
             if (user && user.signInUserSession) { // <--- MODIFIED LINE
-                const idToken = user.signInUserSession.idToken?.jwtToken; // Removed optional chaining on signInUserSession
+                const idToken = user.signInUserSession.idToken?.jwtToken; // Optional chaining for idToken is good
                 console.log('Authenticated with token:', idToken);
                 return user;
             } else {
+                // Log specific reason if not authenticated
                 console.error('User not authenticated: No active session found or invalid session.');
                 setError("Could not retrieve current user session. Please ensure you are logged in.");
-                return null;
+                return null; // Explicitly return null if authentication is not successful
             }
         } catch (error) {
-            console.error('User not authenticated: Failed to get user or session:', error); // More specific error message
+            // This catches actual errors thrown by getCurrentUser() (e.g., network issues)
+            console.error('User not authenticated: Failed to get user or session, or session is invalid:', error);
             setError("Could not retrieve current user session. Please ensure you are logged in.");
             return null;
         }
@@ -80,7 +83,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     useEffect(() => {
         async function fetchUserDetails() {
             const user = await ensureAuth(); // Ensure user is authenticated
-            if (user) {
+            if (user) { // user will be null if ensureAuth fails
                 setLoggedInUserSub(user.username);
                 setUserEmail(user.attributes?.email ?? null);
                 setUserCompanyName(user.attributes?.['custom:company_name'] ?? null); // Corrected custom attribute name
