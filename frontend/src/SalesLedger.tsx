@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { Auth } from 'aws-amplify'; // Import Auth for session management
 import {
     listLedgerEntries,
     listAccountStatuses,
@@ -59,21 +58,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // Function to ensure session is valid before making any requests
-    const checkSession = async () => {
-        try {
-            const session = await Auth.currentSession(); // Get the current session
-            if (!session || !session.getIdToken().getJwtToken()) {
-                setError("Session expired. Please log in again.");
-                return false;
-            }
-            return true;
-        } catch (error) {
-            setError("Could not fetch session. Please log in again.");
-            return false;
-        }
-    };
-
     // Determine userIdForData based on admin status or logged-in user
     useEffect(() => {
         console.log("SalesLedger: Determining userIdForData. isAdmin:", isAdmin, "targetUserId:", targetUserId, "loggedInUserSub:", loggedInUserSub);
@@ -93,8 +77,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
         let allEntries: LedgerEntry[] = [];
         let nextToken: string | undefined = undefined;
-
-        if (!(await checkSession())) return []; // Check if the session is valid before proceeding
 
         try {
             do {
@@ -126,7 +108,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     // Function to refresh all data - useful after mutations
     const refreshAllData = useCallback(async () => {
-        if (!userIdForData || !(await checkSession())) return; // Ensure session is valid
+        if (!userIdForData) return;
 
         setLoadingEntries(true);
         try {
@@ -177,7 +159,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     // Subscription setup
     useEffect(() => {
-        if (!userIdForData || !(checkSession())) return; // Ensure session is valid before subscribing
+        if (!userIdForData) return;
         console.log(`SalesLedger: Setting up subscription for owner: ${userIdForData}`);
         const sub = client.graphql({
             query: onCreateLedgerEntry,
@@ -201,8 +183,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         setPaymentRequestError(null);
         setPaymentRequestSuccess(null);
         try {
-            if (!(await checkSession())) return; // Ensure session is valid before proceeding
-
             if (!userEmail) throw new Error("User email is not available for payment request.");
             const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
             if (amountToRequest <= 0) {
@@ -229,8 +209,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
         try {
-            if (!(await checkSession())) return; // Ensure session is valid before proceeding
-
             if (!userIdForData) {
                 setError("Cannot add entry: User ID for data not available.");
                 return;
