@@ -1,8 +1,7 @@
-// src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-// REMOVE: import { getCurrentUser } from 'aws-amplify/auth'; // No longer needed directly here
-import { Auth } from 'aws-amplify'; // <--- ADD THIS IMPORT for Auth.currentSession()
+import { getCurrentUser } from 'aws-amplify/auth'; // Keep this one for getCurrentUser() if needed elsewhere in the app for type inference
+// REMOVE THIS LINE: import { Auth } from 'aws-amplify/auth'; // <--- REMOVE THIS BREAKING IMPORT
 import {
     listLedgerEntries,
     listAccountStatuses,
@@ -47,7 +46,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
     const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
     const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
-    const [userIdForData, setUserIdForData] = useState<string | null>(null); // Will be set in its useEffect
+    const [userIdForData, setUserIdForData] = useState<string | null>(null); // This will be set in its useEffect
 
     const [entries, setEntries] = useState<LedgerEntry[]>([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
@@ -60,9 +59,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
     const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-
-    // REMOVE THE entire ensureAuth function and its useEffect call related to fetchUserDetails
-    // You now rely on loggedInUser prop which comes from App.tsx's useAuthenticator
 
     // Determine userIdForData based on admin status or logged-in user
     useEffect(() => {
@@ -84,10 +80,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         let allEntries: LedgerEntry[] = [];
         let nextToken: string | undefined = undefined;
         try {
-            // Get the current session to ensure the client is authenticated
-            const session = await Auth.currentSession(); // <--- CRITICAL CHANGE HERE
-            const idToken = session.getIdToken().getJwtToken(); // Get the JWT token
-
+            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
             do {
                 const response = await client.graphql({
                     query: listLedgerEntries,
@@ -96,13 +89,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
                         nextToken,
                         limit: 50,
                     },
-                    // Pass the token explicitly in the request if the client initialization
-                    // isn't picking it up automatically. This is a common workaround.
-                    // Headers can sometimes be automatically added by Amplify if Amplify.configure
-                    // is done properly with Auth, but explicit is robust.
-                    headers: {
-                      Authorization: idToken // <--- ADDED HEADER
-                    }
+                    authMode: 'userPool' // <-- KEEP: This is still important for AppSync to use Cognito tokens
                 });
                 const items = response?.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
                 allEntries = [...allEntries, ...items];
@@ -111,11 +98,11 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             return allEntries;
         } catch (err) {
             console.error("Error in fetchAllLedgerEntries:", err);
-            // Check for authentication specific errors and set a more specific error message
-            if ((err as any).message?.includes("NoValidAuthTokens") || (err as any).message?.includes("Not Authorized")) {
+            // Refine error message for auth issues
+            if (err instanceof Error && err.message.includes("NoValidAuthTokens") || err instanceof Error && err.message.includes("Not Authorized")) {
                  setError("Authentication required for data access. Please re-login.");
             } else {
-                 setError("Failed to load ledger entries.");
+                 setError("Failed to load ledger entries: " + (err as Error).message);
             }
             throw err;
         }
@@ -125,19 +112,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     const refreshAllData = useCallback(async () => {
         if (!userIdForData) return;
 
-        // The token issue likely affects all graphql calls.
-        // We ensure authentication before any GQL call is made within refreshAllData.
-        try {
-            const userSession = await Auth.currentSession(); // Ensure session is active
-            if (!userSession || !userSession.getIdToken().getJwtToken()) {
-                setError("Authentication session expired or invalid. Please re-login.");
-                return;
-            }
-        } catch (err) {
-            setError("Could not establish active session for data refresh. Please re-login.");
-            return;
-        }
-
+        // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
 
         setLoadingEntries(true);
         try {
@@ -153,8 +128,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         try {
             const statusResponse = await client.graphql({
                 query: listAccountStatuses,
-                variables: { owner: userIdForData, limit: 1 }
-                // headers: { Authorization: userSession.getIdToken().getJwtToken() } // Optional: add header here too
+                variables: { owner: userIdForData, limit: 1 },
+                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
             });
             const statusItem = statusResponse?.data?.listAccountStatuses?.items?.[0] || null;
             setAccountStatus(statusItem);
@@ -168,8 +143,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         try {
             const transactionsResponse = await client.graphql({
                 query: listCurrentAccountTransactions,
-                variables: { filter: { owner: { eq: userIdForData } } }
-                // headers: { Authorization: userSession.getIdToken().getJwtToken() } // Optional: add header here too
+                variables: { filter: { owner: { eq: userIdForData } } },
+                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
             });
             const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
             setCurrentAccountTransactions(transactionItems);
@@ -178,7 +153,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         } finally {
             setLoadingTransactions(false);
         }
-    }, [userIdForData, fetchAllLedgerEntries, client]);
+    }, [userIdForData, fetchAllLedgerEntries, client]); // Dependencies for useCallback
 
     // Initial data fetch effect
     useEffect(() => {
@@ -192,8 +167,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         console.log(`SalesLedger: Setting up subscription for owner: ${userIdForData}`);
         const sub = client.graphql({
             query: onCreateLedgerEntry,
-            variables: { owner: userIdForData }
-            // headers: { Authorization: userSession.getIdToken().getJwtToken() } // Need to pass token here too
+            variables: { owner: userIdForData },
+            authMode: 'userPool' // <-- KEEP: Explicitly set authMode
         }).subscribe({
             next: ({ data }) => {
                 const newEntry = data.onCreateLedgerEntry;
@@ -204,7 +179,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
         });
 
-        return () => sub.unsubscribe();
+        return () => sub.unsubscribe(); // Unsubscribe when component unmounts
     }, [userIdForData, client]);
 
     const handlePaymentRequest = async () => {
@@ -212,16 +187,13 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         setPaymentRequestError(null);
         setPaymentRequestSuccess(null);
         try {
-            // Ensure authentication before mutation
-            const userSession = await Auth.currentSession();
-            if (!userSession || !userSession.getIdToken().getJwtToken()) {
-                throw new Error("Authentication required for payment request.");
-            }
-            const idToken = userSession.getIdToken().getJwtToken(); // Get the JWT token
+            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
 
             if (!userEmail) throw new Error("User email is not available for payment request.");
             const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
-            if (amountToRequest <= 0) throw new Error("Calculated amount for payment request is zero or negative.");
+            if (amountToRequest <= 0) {
+                 throw new Error("Calculated amount for payment request is zero or negative.");
+            }
 
             const input: SendPaymentRequestInput = {
                 amount: amountToRequest,
@@ -230,7 +202,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             await client.graphql({
                 query: sendPaymentRequestEmail,
                 variables: { input },
-                headers: { Authorization: idToken } // <--- ADDED HEADER
+                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
             });
             setPaymentRequestSuccess("Payment request sent successfully!");
         } catch (error) {
@@ -243,12 +215,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
     const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
         try {
-            // Ensure authentication before mutation
-            const userSession = await Auth.currentSession();
-            if (!userSession || !userSession.getIdToken().getJwtToken()) {
-                throw new Error("Authentication required for adding ledger entry.");
-            }
-            const idToken = userSession.getIdToken().getJwtToken(); // Get the JWT token
+            // No explicit Auth.currentSession() here. Rely on client.graphql to pick up current session.
 
             if (!userIdForData) {
                 setError("Cannot add entry: User ID for data not available.");
@@ -263,7 +230,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             await client.graphql({
                 query: adminCreateLedgerEntry,
                 variables: { input },
-                headers: { Authorization: idToken } // <--- ADDED HEADER
+                authMode: 'userPool' // <-- KEEP: Explicitly set authMode
             });
             refreshAllData();
         } catch (err) {
