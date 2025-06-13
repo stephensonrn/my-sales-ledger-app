@@ -40,12 +40,12 @@ interface SalesLedgerProps {
 
 function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedgerProps) {
   const client = generateClient(); // Initialize client once per component instance
+  const { user } = useAuthenticator(); // Use the `useAuthenticator` hook to get the logged-in user
 
-  // These states are now initialized directly from loggedInUser prop
-  const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
-  const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
-  const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
-  const [userIdForData, setUserIdForData] = useState<string | null>(null); // Will be set in its useEffect
+  const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(user?.username || null);
+  const [userEmail, setUserEmail] = useState<string | null>(user?.attributes?.email ?? null);
+  const [userCompanyName, setUserCompanyName] = useState<string | null>(user?.attributes?.['custom:company_name'] ?? null);
+  const [userIdForData, setUserIdForData] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -147,38 +147,27 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     refreshAllData();
   }, [userIdForData, refreshAllData]);
 
-  // Subscription setup with JWT token
+  // Subscription setup using useAuthenticator for JWT token
   useEffect(() => {
     if (!userIdForData) return;
 
-    const fetchData = async () => {
-      try {
-        const session = await Auth.currentSession(); // Ensure session is active
-        const idToken = session.getIdToken().getJwtToken(); // Get the JWT token
+    const sub = client.graphql({
+      query: onCreateLedgerEntry,
+      variables: { owner: userIdForData },
+      authMode: 'userPool', // Ensure we're using userPool auth mode for subscriptions
+      headers: { Authorization: user?.signInUserSession?.idToken?.jwtToken } // Add JWT token to headers
+    }).subscribe({
+      next: ({ data }) => {
+        const newEntry = data.onCreateLedgerEntry;
+        if (newEntry) {
+          setEntries(prevEntries => [newEntry, ...prevEntries]);
+        }
+      },
+      error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
+    });
 
-        const sub = client.graphql({
-          query: onCreateLedgerEntry,
-          variables: { owner: userIdForData },
-          authMode: 'userPool',
-          headers: { Authorization: idToken } // Add JWT token to headers
-        }).subscribe({
-          next: ({ data }) => {
-            const newEntry = data.onCreateLedgerEntry;
-            if (newEntry) {
-              setEntries(prevEntries => [newEntry, ...prevEntries]);
-            }
-          },
-          error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
-        });
-
-        return () => sub.unsubscribe(); // Cleanup on unmount
-      } catch (err) {
-        console.error('Subscription failed:', err);
-      }
-    };
-
-    fetchData();
-  }, [userIdForData, client]);
+    return () => sub.unsubscribe(); // Cleanup on unmount
+  }, [userIdForData, client, user]);
 
   const handlePaymentRequest = async () => {
     setPaymentRequestLoading(true);
