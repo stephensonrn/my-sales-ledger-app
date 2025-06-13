@@ -9,7 +9,8 @@ import {
     createLedgerEntry,
     adminCreateLedgerEntry,
     sendPaymentRequestEmail,
-    adminRequestPaymentForUser
+    adminRequestPaymentForUser,
+    updateAccountStatus // Assume this mutation exists for updating account status
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 import {
@@ -96,12 +97,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
             return allEntries;
         } catch (err) {
             console.error("Error in fetchAllLedgerEntries:", err);
-            // Refine error message for auth issues
-            if (err instanceof Error && err.message.includes("NoValidAuthTokens") || err instanceof Error && err.message.includes("Not Authorized")) {
-                setError("Authentication required for data access. Please re-login.");
-            } else {
-                setError("Failed to load ledger entries: " + (err as Error).message);
-            }
+            setError("Failed to load ledger entries: " + (err as Error).message);
             throw err;
         }
     }, [client]);
@@ -142,18 +138,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
                 variables: { filter: { owner: { eq: userIdForData } } },
                 authMode: 'userPool' // Explicitly set authMode
             });
-
-            // Log the response from listCurrentAccountTransactions for debugging
-            console.log("listCurrentAccountTransactions response:", transactionsResponse);
-
             const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
             setCurrentAccountTransactions(transactionItems);
-
-            // Optionally, log specific fields to ensure valid data is received
-            transactionItems.forEach((item) => {
-                console.log("Transaction item:", item);
-                console.log("Total Unapproved Invoice Value:", item.totalUnapprovedInvoiceValue);
-            });
         } catch (err) {
             setError("Failed to load account transactions.");
         } finally {
@@ -170,7 +156,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     // Subscription setup
     useEffect(() => {
         if (!userIdForData) return;
-        console.log(`SalesLedger: Setting up subscription for owner: ${userIdForData}`);
         const sub = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: userIdForData },
@@ -187,6 +172,28 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
         return () => sub.unsubscribe(); // Unsubscribe when component unmounts
     }, [userIdForData, client]);
+
+    // Handle admin update for Total Unapproved Invoice Value
+    const handleAdminUpdateStatus = async (newTotalUnapprovedInvoiceValue: number) => {
+        try {
+            // Assuming updateAccountStatus is the mutation for updating the account status
+            const input = {
+                owner: userIdForData,
+                totalUnapprovedInvoiceValue: newTotalUnapprovedInvoiceValue,
+            };
+            await client.graphql({
+                query: updateAccountStatus,
+                variables: { input },
+                authMode: 'userPool', // Ensure we use the correct auth mode
+            });
+
+            // After update, fetch the new account status data
+            refreshAllData();
+        } catch (err) {
+            console.error("Error updating account status:", err);
+            setError("Failed to update account status.");
+        }
+    };
 
     const handlePaymentRequest = async () => {
         setPaymentRequestLoading(true);
@@ -283,7 +290,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
                 calculatedAdvance={accountStatus ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE : 0}
             />
 
-            <ManageAccountStatus selectedOwnerSub={userIdForData} />
+            <ManageAccountStatus selectedOwnerSub={userIdForData} onUpdateStatus={handleAdminUpdateStatus} />
 
             <LedgerHistory entries={entries} />
         </View>
