@@ -1,5 +1,6 @@
 // src/App.tsx
 import React from 'react';
+// Import Authenticator AND the useAuthenticator hook
 import { Authenticator, Button, Heading, View, Flex, useAuthenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 
@@ -13,6 +14,8 @@ import './App.css';
 
 // Logo
 import aurumLogo from '/Aurum.png';
+
+// src/index.tsx (Note: The import './aws-config'; line should be in src/index.tsx, not here in App.tsx)
 
 // --- Authenticator Customization Objects ---
 const formFields = {
@@ -41,9 +44,10 @@ const components = {
 };
 
 // --- New Component Rendered ONLY When Authenticated ---
-// Added 'user' as a prop
 function AuthenticatedContent() {
+  // Get user and signOut using the hook *inside* the component
   const { user, signOut } = useAuthenticator((context) => [context.user, context.signOut]);
+  // Call the admin check hook unconditionally at the top level here
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
 
   if (adminCheckError) {
@@ -55,15 +59,15 @@ function AuthenticatedContent() {
     <View padding="medium">
       {/* --- Simplified Header / Sign Out --- */}
       <Flex
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        style={{ marginBottom: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          style={{ marginBottom: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}
       >
-        <Heading level={4}>Welcome {user?.signInDetails?.loginId || user?.username || 'User'}!</Heading>
-        {user && (
-          <Button onClick={signOut} variation="primary" size="small">Sign Out</Button>
-        )}
+          <Heading level={4}>Welcome {user?.signInDetails?.loginId || user?.username || 'User'}!</Heading>
+          {user && (
+              <Button onClick={signOut} variation="primary" size="small">Sign Out</Button>
+          )}
       </Flex>
 
       {/* --- Main Content Area (Conditional Rendering) --- */}
@@ -73,11 +77,13 @@ function AuthenticatedContent() {
         ) : isAdmin ? (
           // User is Admin -> Render Admin Page, passing user
           <div>
-            <AdminPage loggedInUser={user} /> {/* <--- MODIFIED */}
+            <AdminPage loggedInUser={user} />
           </div>
         ) : (
           // User is NOT Admin -> Render Sales Ledger, passing user
-          <SalesLedger loggedInUser={user} /> {/* <--- MODIFIED */}
+          <div> {/* <--- THE FIX: Added wrapping div here */}
+            <SalesLedger loggedInUser={user} />
+          </div>
         )}
       </main>
     </View>
@@ -87,6 +93,7 @@ function AuthenticatedContent() {
 // --- Main App Component ---
 function App() {
   return (
+    // Authenticator handles sign-in/sign-up UI and state
     <Authenticator loginMechanisms={['email']} formFields={formFields} components={components}>
       <AuthenticatedContent />
     </Authenticator>
