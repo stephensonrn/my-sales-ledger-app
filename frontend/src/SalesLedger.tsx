@@ -146,7 +146,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     refreshAllData();
   }, [userIdForData, refreshAllData]);
 
-  // Subscription setup
+  // Subscription setup with cleanup using sub.unsubscribe()
   useEffect(() => {
     if (!userIdForData) return;
     const sub = client.graphql({
@@ -163,7 +163,10 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
     });
 
-    return () => sub.unsubscribe(); // Unsubscribe when component unmounts
+    return () => {
+      console.log('Unsubscribing from the subscription...');
+      sub.unsubscribe(); // This will clean up the subscription
+    };
   }, [userIdForData, client]);
 
   const handlePaymentRequest = async () => {
