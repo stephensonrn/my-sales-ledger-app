@@ -1,5 +1,7 @@
+// src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
+import { useAuthenticator } from '@aws-amplify/ui-react';
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -56,8 +58,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
   const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const [subscriptions, setSubscriptions] = useState<any[]>([]); // Track subscriptions
 
   // Ensure userIdForData is correctly set based on user type (admin or non-admin)
   useEffect(() => {
@@ -147,33 +147,37 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     refreshAllData();
   }, [userIdForData, refreshAllData]);
 
-  // Subscription setup
+  // Subscription setup with JWT token
   useEffect(() => {
     if (!userIdForData) return;
 
-    // Create a new subscription for the userIdForData
-    const sub = client.graphql({
-      query: onCreateLedgerEntry,
-      variables: { owner: userIdForData },
-      authMode: 'userPool', // Ensure we're using userPool auth mode for subscriptions
-    }).subscribe({
-      next: ({ data }) => {
-        const newEntry = data.onCreateLedgerEntry;
-        if (newEntry) {
-          setEntries(prevEntries => [newEntry, ...prevEntries]);
-        }
-      },
-      error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
-    });
+    const fetchData = async () => {
+      try {
+        const session = await Auth.currentSession(); // Ensure session is active
+        const idToken = session.getIdToken().getJwtToken(); // Get the JWT token
 
-    // Add the subscription to the state
-    setSubscriptions(prevSubscriptions => [...prevSubscriptions, sub]);
+        const sub = client.graphql({
+          query: onCreateLedgerEntry,
+          variables: { owner: userIdForData },
+          authMode: 'userPool',
+          headers: { Authorization: idToken } // Add JWT token to headers
+        }).subscribe({
+          next: ({ data }) => {
+            const newEntry = data.onCreateLedgerEntry;
+            if (newEntry) {
+              setEntries(prevEntries => [newEntry, ...prevEntries]);
+            }
+          },
+          error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
+        });
 
-    // Cleanup when the component unmounts or userIdForData changes
-    return () => {
-      sub.unsubscribe(); // Unsubscribe from this specific subscription
-      setSubscriptions(prevSubscriptions => prevSubscriptions.filter(s => s !== sub)); // Remove it from the state
+        return () => sub.unsubscribe(); // Cleanup on unmount
+      } catch (err) {
+        console.error('Subscription failed:', err);
+      }
     };
+
+    fetchData();
   }, [userIdForData, client]);
 
   const handlePaymentRequest = async () => {
