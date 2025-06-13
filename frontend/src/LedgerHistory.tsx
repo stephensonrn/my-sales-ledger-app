@@ -1,6 +1,15 @@
 import React from 'react';
 import { Text, Loader, View, Table, TableHead, TableRow, TableCell, TableBody, Badge } from '@aws-amplify/ui-react';
 
+type HistoryEntry = Pick<LedgerEntry | CurrentAccountTransaction, 
+    'id' | 'createdAt' | 'type' | 'description' | 'amount'
+>;
+
+interface LedgerHistoryProps {
+  entries: HistoryEntry[]; 
+  isLoading: boolean;
+}
+
 function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
   if (isLoading) {
     return <Loader />;
@@ -35,7 +44,7 @@ function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
                 >
                     {entry.type.replace('_', ' ')}
                 </Badge>
-                </TableCell>
+              </TableCell>
               <TableCell>{entry.description || '-'}</TableCell>
               <TableCell textAlign="right">{(entry.amount || 0).toFixed(2)}</TableCell>
             </TableRow>

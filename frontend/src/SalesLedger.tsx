@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { Auth } from 'aws-amplify'; // For session management
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -34,15 +33,17 @@ const ADVANCE_RATE = 0.90;
 interface SalesLedgerProps {
   targetUserId?: string | null;
   isAdmin?: boolean;
-  loggedInUser: any;
+  loggedInUser: any; // Assuming loggedInUser is passed in correctly
 }
 
 function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedgerProps) {
-  const client = generateClient();
+  const client = generateClient(); // Initialize client once per component instance
+
+  // These states are now initialized directly from loggedInUser prop
   const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
   const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
   const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
-  const [userIdForData, setUserIdForData] = useState<string | null>(null);
+  const [userIdForData, setUserIdForData] = useState<string | null>(null); // Will be set in its useEffect
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -56,6 +57,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Ensure userIdForData is correctly set based on user type (admin or non-admin)
   useEffect(() => {
     if (isAdmin && targetUserId) {
       setUserIdForData(targetUserId);
@@ -66,6 +68,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     }
   }, [isAdmin, targetUserId, loggedInUserSub]);
 
+  // Function to fetch all ledger entries (paginated)
   const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
     let allEntries: LedgerEntry[] = [];
     let nextToken: string | undefined = undefined;
@@ -73,8 +76,12 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       do {
         const response = await client.graphql({
           query: listLedgerEntries,
-          variables: { filter: { owner: { eq: ownerId } }, nextToken, limit: 50 },
-          authMode: 'userPool',
+          variables: {
+            filter: { owner: { eq: ownerId } },
+            nextToken,
+            limit: 50,
+          },
+          authMode: 'userPool', // Ensure we're using userPool auth mode
         });
         const items = response?.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
         allEntries = [...allEntries, ...items];
@@ -82,13 +89,16 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       } while (nextToken);
       return allEntries;
     } catch (err) {
+      console.error("Error in fetchAllLedgerEntries:", err);
       setError("Failed to load ledger entries.");
       throw err;
     }
   }, [client]);
 
+  // Function to refresh all data - useful after mutations
   const refreshAllData = useCallback(async () => {
     if (!userIdForData) return;
+
     setLoadingEntries(true);
     try {
       const entriesResponse = await fetchAllLedgerEntries(userIdForData);
@@ -130,36 +140,30 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     }
   }, [userIdForData, fetchAllLedgerEntries, client]);
 
+  // Initial data fetch effect
   useEffect(() => {
     refreshAllData();
   }, [userIdForData, refreshAllData]);
 
+  // Subscription setup
   useEffect(() => {
     if (!userIdForData) return;
-    const fetchAuthToken = async () => {
-      try {
-        const session = await Auth.currentSession();
-        const idToken = session.getIdToken().getJwtToken(); 
-        const sub = client.graphql({
-          query: onCreateLedgerEntry,
-          variables: { owner: userIdForData },
-          authMode: 'userPool',
-          headers: { Authorization: idToken },
-        }).subscribe({
-          next: ({ data }) => {
-            const newEntry = data.onCreateLedgerEntry;
-            if (newEntry) {
-              setEntries(prevEntries => [newEntry, ...prevEntries]);
-            }
-          },
-          error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
-        });
-        return () => sub.unsubscribe();
-      } catch (error) {
-        console.error('Error fetching session:', error);
-      }
-    };
-    fetchAuthToken();
+
+    const sub = client.graphql({
+      query: onCreateLedgerEntry,
+      variables: { owner: userIdForData },
+      authMode: 'userPool', // Ensure we're using userPool auth mode for subscriptions
+    }).subscribe({
+      next: ({ data }) => {
+        const newEntry = data.onCreateLedgerEntry;
+        if (newEntry) {
+          setEntries(prevEntries => [newEntry, ...prevEntries]);
+        }
+      },
+      error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
+    });
+
+    return () => sub.unsubscribe(); // Unsubscribe when component unmounts
   }, [userIdForData, client]);
 
   const handlePaymentRequest = async () => {
@@ -213,6 +217,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     }
   };
 
+  // Show loading state
   if (loadingEntries || loadingStatus || loadingTransactions) {
     return (
       <View className="sales-ledger-loader">
@@ -222,6 +227,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     );
   }
 
+  // Show error state
   if (error) {
     return (
       <View className="sales-ledger-error">
@@ -246,7 +252,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         calculatedAdvance={accountStatus ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE : 0}
       />
       <ManageAccountStatus selectedOwnerSub={userIdForData} />
-      <LedgerHistory entries={entries} isLoading={loadingEntries} />
+      <LedgerHistory entries={entries} />
     </View>
   );
 }
