@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { useAuthenticator } from '@aws-amplify/ui-react';
 import {
   listLedgerEntries,
   listAccountStatuses,
@@ -57,6 +56,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
   const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [subscriptions, setSubscriptions] = useState<any[]>([]); // Track subscriptions
 
   // Ensure userIdForData is correctly set based on user type (admin or non-admin)
   useEffect(() => {
@@ -146,9 +147,11 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     refreshAllData();
   }, [userIdForData, refreshAllData]);
 
-  // Subscription setup with cleanup using sub.unsubscribe()
+  // Subscription setup
   useEffect(() => {
     if (!userIdForData) return;
+
+    // Create a new subscription for the userIdForData
     const sub = client.graphql({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
@@ -163,9 +166,13 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
     });
 
+    // Add the subscription to the state
+    setSubscriptions(prevSubscriptions => [...prevSubscriptions, sub]);
+
+    // Cleanup when the component unmounts or userIdForData changes
     return () => {
-      console.log('Unsubscribing from the subscription...');
-      sub.unsubscribe(); // This will clean up the subscription
+      sub.unsubscribe(); // Unsubscribe from this specific subscription
+      setSubscriptions(prevSubscriptions => prevSubscriptions.filter(s => s !== sub)); // Remove it from the state
     };
   }, [userIdForData, client]);
 
