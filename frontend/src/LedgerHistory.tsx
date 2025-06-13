@@ -1,4 +1,3 @@
-// src/LedgerHistory.tsx
 import React from 'react';
 import { Text, Loader, View, Table, TableHead, TableRow, TableCell, TableBody, Badge } from '@aws-amplify/ui-react';
 
@@ -25,6 +24,17 @@ function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
     return <Text>No transactions to display.</Text>;
   }
 
+  // Helper function for formatting amounts
+  const formatAmount = (amount: number): string => {
+    return isNaN(amount) ? '£0.00' : `£${amount.toFixed(2)}`;
+  };
+
+  // Helper function for date formatting
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
   return (
     <View style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ddd' }}>
       <Table highlightOnHover={true} size="small">
@@ -39,7 +49,7 @@ function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
         <TableBody>
           {entries.map((entry) => (
             <TableRow key={entry.id}>
-              <TableCell>{new Date(entry.createdAt).toLocaleDateString()}</TableCell>
+              <TableCell>{formatDate(entry.createdAt)}</TableCell>
               <TableCell>
                 <Badge 
                     variation={
@@ -50,9 +60,9 @@ function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
                 >
                     {entry.type.replace('_', ' ')}
                 </Badge>
-                </TableCell>
+              </TableCell>
               <TableCell>{entry.description || '-'}</TableCell>
-              <TableCell textAlign="right">{(entry.amount || 0).toFixed(2)}</TableCell>
+              <TableCell textAlign="right">{formatAmount(entry.amount || 0)}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -60,4 +70,5 @@ function LedgerHistory({ entries, isLoading }: LedgerHistoryProps) {
     </View>
   );
 }
+
 export default LedgerHistory;
