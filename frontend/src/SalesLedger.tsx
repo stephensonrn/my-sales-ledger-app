@@ -142,8 +142,18 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
                 variables: { filter: { owner: { eq: userIdForData } } },
                 authMode: 'userPool' // Explicitly set authMode
             });
+
+            // Log the response from listCurrentAccountTransactions for debugging
+            console.log("listCurrentAccountTransactions response:", transactionsResponse);
+
             const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
             setCurrentAccountTransactions(transactionItems);
+
+            // Optionally, log specific fields to ensure valid data is received
+            transactionItems.forEach((item) => {
+                console.log("Transaction item:", item);
+                console.log("Total Unapproved Invoice Value:", item.totalUnapprovedInvoiceValue);
+            });
         } catch (err) {
             setError("Failed to load account transactions.");
         } finally {
