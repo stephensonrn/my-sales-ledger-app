@@ -1,7 +1,7 @@
 // src/AdminPage.tsx
 import React, { useState, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { type User } from 'aws-amplify/auth'; // <--- IMPORT User type
+import { type User } from 'aws-amplify/auth';
 import {
   Flex,
   Heading,
@@ -14,34 +14,48 @@ import {
   Alert,
 } from '@aws-amplify/ui-react';
 
-// --- CORRECTED IMPORTS ---
 import { adminListUsers } from './graphql/operations/queries';
 import type { CognitoUser, AdminListUsersQuery } from './graphql/API';
-// --- END CORRECTED IMPORTS ---
 
-// Import child components
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
 import SalesLedger from './SalesLedger';
 
-const client = generateClient();
 const USERS_PER_PAGE = 10;
 
 interface AdminPageProps {
-  loggedInUser: User; // <--- ADDED PROP
+  loggedInUser: User;
 }
 
-function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
+function AdminPage({ loggedInUser }: AdminPageProps) {
+  const [client, setClient] = useState<any>(null);
   const [users, setUsers] = useState<CognitoUser[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
+  // ✅ Setup authenticated client after confirming session
+  useEffect(() => {
+    const setupClient = async () => {
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      try {
+        const user = await getCurrentUser();
+        if (user) {
+          setClient(generateClient());
+        }
+      } catch (err) {
+        console.error("AdminPage: Failed to get current user session:", err);
+      }
+    };
+    setupClient();
+  }, []);
+
   const fetchUsers = async (token: string | null = null) => {
-    if (isLoadingUsers && !token) return;
+    if (!client || (isLoadingUsers && !token)) return;
     setIsLoadingUsers(true);
     setFetchError(null);
+
     if (!token) {
       setSelectedUser(null);
       setUsers([]);
@@ -64,7 +78,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
       }
 
       const resultData = response.data?.adminListUsers;
-      const fetchedUsers = resultData?.users?.filter(u => u !== null) as CognitoUser[] || [];
+      const fetchedUsers = resultData?.users?.filter(Boolean) as CognitoUser[] || [];
       const paginationToken = resultData?.nextToken ?? null;
 
       setUsers(prevUsers => token ? [...prevUsers, ...fetchedUsers] : fetchedUsers);
@@ -85,8 +99,8 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
   };
 
   useEffect(() => {
-    fetchUsers(); // Initial fetch
-  }, []);
+    if (client) fetchUsers();
+  }, [client]);
 
   const handleUserSelect = (user: CognitoUser) => {
     setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
@@ -120,30 +134,34 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
             </thead>
             <tbody>
               {!isLoadingUsers && users.length === 0 && !fetchError && (
-                  <tr key="no-users-row"><td colSpan={5} style={{...thTdStyle, textAlign: 'center'}}><Text>No users found.</Text></td></tr>
+                <tr key="no-users-row">
+                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Text>No users found.</Text></td>
+                </tr>
               )}
               {users.map((user) => {
-                  if (!user || !user.sub) return null;
-                  return (
-                    <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
-                      <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
-                      <td style={thTdStyle}>{getUserAttribute(user, 'custom:company_name') ?? '-'}</td>
-                      <td style={thTdStyle}><Badge variation={user.enabled ? 'success' : 'info'}>{user.status}</Badge></td>
-                      <td style={thTdStyle}><code>{user.sub}</code></td>
-                      <td style={thTdStyle}>
-                        <Button
-                          size="small"
-                          variation={selectedUser?.sub === user.sub ? 'primary' : 'link'}
-                          onClick={() => handleUserSelect(user)}
-                        >
-                          {selectedUser?.sub === user.sub ? 'Selected' : 'Select'}
-                        </Button>
-                      </td>
-                    </tr>
-                  );
+                if (!user || !user.sub) return null;
+                return (
+                  <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
+                    <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
+                    <td style={thTdStyle}>{getUserAttribute(user, 'custom:company_name') ?? '-'}</td>
+                    <td style={thTdStyle}><Badge variation={user.enabled ? 'success' : 'info'}>{user.status}</Badge></td>
+                    <td style={thTdStyle}><code>{user.sub}</code></td>
+                    <td style={thTdStyle}>
+                      <Button
+                        size="small"
+                        variation={selectedUser?.sub === user.sub ? 'primary' : 'link'}
+                        onClick={() => handleUserSelect(user)}
+                      >
+                        {selectedUser?.sub === user.sub ? 'Selected' : 'Select'}
+                      </Button>
+                    </td>
+                  </tr>
+                );
               })}
               {isLoadingUsers && users.length > 0 && (
-                  <tr key="loader-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td></tr>
+                <tr key="loader-row">
+                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -151,7 +169,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
         {nextToken && !isLoadingUsers && (
           <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
-          {isLoadingUsers && users.length > 0 && <Loader marginTop="small"/>}
+        {isLoadingUsers && users.length > 0 && <Loader marginTop="small" />}
       </Card>
 
       <View marginTop="large">
@@ -166,9 +184,9 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
                 <ManageAccountStatus
-                    selectedOwnerSub={selectedUser.sub}
-                    targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub}
-                    loggedInUser={loggedInUser} // <--- ADDED PROP
+                  selectedOwnerSub={selectedUser.sub}
+                  targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub}
+                  loggedInUser={loggedInUser}
                 />
               </Card>
 
@@ -176,7 +194,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
                 <AddCashReceiptForm
                   selectedTargetSub={selectedUser.sub}
-                  loggedInUser={loggedInUser} // <--- ADDED PROP
+                  loggedInUser={loggedInUser}
                 />
               </Card>
 
@@ -185,13 +203,13 @@ function AdminPage({ loggedInUser }: AdminPageProps) { // <--- ACCEPT PROP
                 <SalesLedger
                   targetUserId={selectedUser.sub}
                   isAdmin={true}
-                  loggedInUser={loggedInUser} // <--- ADDED PROP
+                  loggedInUser={loggedInUser}
                 />
               </Card>
             </Flex>
           </>
         ) : (
-            !isLoadingUsers && <Alert variation="info">Please select a user from the list above to manage their details or view their ledger.</Alert>
+          !isLoadingUsers && <Alert variation="info">Please select a user from the list above to manage their details or view their ledger.</Alert>
         )}
       </View>
     </Flex>
