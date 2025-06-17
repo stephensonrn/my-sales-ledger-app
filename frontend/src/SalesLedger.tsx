@@ -7,14 +7,11 @@ import {
   listCurrentAccountTransactions
 } from './graphql/operations/queries';
 import {
-  createLedgerEntry,
   adminCreateLedgerEntry,
-  sendPaymentRequestEmail,
-  adminRequestPaymentForUser
+  sendPaymentRequestEmail
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 import {
-  LedgerEntryType,
   type LedgerEntry,
   type AccountStatus,
   type CurrentAccountTransaction,
@@ -27,7 +24,7 @@ import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
 import ManageAccountStatus from './ManageAccountStatus';
-import { Loader, Text, Alert, View } from '@aws-amplify/ui-react';
+import { Loader, Text, Alert, View, Card, Heading, Flex } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.90;
 
@@ -116,7 +113,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     try {
       const entriesResponse = await fetchAllLedgerEntries(userIdForData);
       setEntries(entriesResponse);
-    } catch (err) {
+    } catch {
       setError("Failed to load ledger history.");
     } finally {
       setLoadingEntries(false);
@@ -131,7 +128,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       });
       const statusItem = statusResponse?.data?.listAccountStatuses?.items?.[0] || null;
       setAccountStatus(statusItem);
-    } catch (err) {
+    } catch {
       setError("Failed to load account status.");
     } finally {
       setLoadingStatus(false);
@@ -146,7 +143,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
       });
       const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
       setCurrentAccountTransactions(transactionItems);
-    } catch (err) {
+    } catch {
       setError("Failed to load account transactions.");
     } finally {
       setLoadingTransactions(false);
@@ -229,7 +226,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         authMode: 'userPool',
       });
       refreshAllData();
-    } catch (err) {
+    } catch {
       setError("Failed to add ledger entry. Please try again.");
     }
   };
@@ -261,17 +258,32 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     <View className="sales-ledger-container">
       <h2>Sales Ledger for {userCompanyName || 'Your Business'}</h2>
       <CurrentBalance balance={accountStatus?.totalUnapprovedInvoiceValue || 0} />
-      <AvailabilityDisplay currentBalance={accountStatus?.totalUnapprovedInvoiceValue || 0} advanceRate={ADVANCE_RATE} />
+      <AvailabilityDisplay
+        currentSalesLedgerBalance={accountStatus?.totalUnapprovedInvoiceValue || 0}
+        totalUnapprovedInvoiceValue={accountStatus?.totalUnapprovedInvoiceValue || 0}
+        grossAvailability={calculatedAdvance}
+        netAvailability={calculatedAdvance - (accountStatus?.currentAccountBalance || 0)}
+        currentAccountBalance={accountStatus?.currentAccountBalance || 0}
+      />
       <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
       <PaymentRequestForm
         onSubmitRequest={handlePaymentRequest}
         isLoading={paymentRequestLoading}
         requestError={paymentRequestError}
         requestSuccess={paymentRequestSuccess}
-        calculatedAdvance={calculatedAdvance}
+        netAvailability={calculatedAdvance - (accountStatus?.currentAccountBalance || 0)}
       />
       <ManageAccountStatus selectedOwnerSub={userIdForData} />
-      <LedgerHistory entries={entries} />
+
+      <Card variation="elevated" marginTop="medium">
+        <Heading level={4} marginBottom="small">Sales Ledger History</Heading>
+        <LedgerHistory entries={entries} isLoading={loadingEntries} />
+      </Card>
+
+      <Card variation="elevated" marginTop="medium">
+        <Heading level={4} marginBottom="small">Current Account Transactions</Heading>
+        <LedgerHistory entries={currentAccountTransactions} isLoading={loadingTransactions} />
+      </Card>
     </View>
   );
 }
