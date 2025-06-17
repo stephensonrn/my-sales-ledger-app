@@ -1,3 +1,4 @@
+// src/PaymentRequestForm.tsx
 import React, { useState } from 'react';
 import { Button, TextField, Flex, Alert, Text, View } from '@aws-amplify/ui-react';
 
@@ -7,8 +8,13 @@ interface PaymentRequestFormProps {
   isLoading: boolean;
   requestError: string | null;
   requestSuccess: string | null;
-  disabled?: boolean; // Optional for parent to disable
+  disabled?: boolean;
 }
+
+const formatCurrency = (value: number | null | undefined) =>
+  typeof value === 'number' && !isNaN(value)
+    ? value.toFixed(2)
+    : '0.00';
 
 function PaymentRequestForm({
   netAvailability,
@@ -27,15 +33,13 @@ function PaymentRequestForm({
 
     const numericAmount = parseFloat(amount);
 
-    // Validate the amount input
     if (isNaN(numericAmount) || numericAmount <= 0) {
       setValidationError('Please enter a valid positive amount.');
       return;
     }
 
-    // Check if the amount exceeds the net availability
     if (numericAmount > netAvailability) {
-      setValidationError(`Amount cannot exceed Net Availability (£${netAvailability.toFixed(2)}).`);
+      setValidationError(`Amount cannot exceed Net Availability (£${formatCurrency(netAvailability)}).`);
       return;
     }
 
@@ -46,28 +50,17 @@ function PaymentRequestForm({
   return (
     <View as="form" onSubmit={handleSubmit} marginTop="medium" border="1px solid #ddd" padding="medium">
       <Text fontSize="small" color="font.secondary" marginBottom="small">
-        Net Available for Request: £{netAvailability.toFixed(2)}
+        Net Available for Request: £{formatCurrency(netAvailability)}
       </Text>
+
       {validationError && (
-        <Alert
-          variation="error"
-          marginBottom="small"
-          isDismissible={true}
-          onDismiss={() => setValidationError(null)}
-        >
+        <Alert variation="error" marginBottom="small" isDismissible onDismiss={() => setValidationError(null)}>
           {validationError}
         </Alert>
       )}
-      {requestError && (
-        <Alert variation="error" marginBottom="small">
-          {requestError}
-        </Alert>
-      )}
-      {requestSuccess && (
-        <Alert variation="success" marginBottom="small">
-          {requestSuccess}
-        </Alert>
-      )}
+      {requestError && <Alert variation="error" marginBottom="small">{requestError}</Alert>}
+      {requestSuccess && <Alert variation="success" marginBottom="small">{requestSuccess}</Alert>}
+
       <Flex direction="column" gap="small">
         <TextField
           label="Amount to Request (£):"
