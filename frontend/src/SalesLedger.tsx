@@ -1,3 +1,4 @@
+// src/SalesLedger.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import {
@@ -37,8 +38,7 @@ interface SalesLedgerProps {
 }
 
 function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedgerProps) {
-  const client = generateClient();
-
+  const [client, setClient] = useState<any>(null);
   const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
   const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
   const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
@@ -57,6 +57,21 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const setupClient = async () => {
+      const { getCurrentUser } = await import('aws-amplify/auth');
+      try {
+        const user = await getCurrentUser();
+        if (user) {
+          setClient(generateClient());
+        }
+      } catch (err) {
+        console.error("Failed to get current user:", err);
+      }
+    };
+    setupClient();
+  }, []);
+
+  useEffect(() => {
     if (isAdmin && targetUserId) {
       setUserIdForData(targetUserId);
     } else if (!isAdmin && loggedInUserSub) {
@@ -67,6 +82,8 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   }, [isAdmin, targetUserId, loggedInUserSub]);
 
   const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
+    if (!client) return [];
+
     let allEntries: LedgerEntry[] = [];
     let nextToken: string | undefined = undefined;
     try {
@@ -93,7 +110,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   }, [client]);
 
   const refreshAllData = useCallback(async () => {
-    if (!userIdForData) return;
+    if (!client || !userIdForData) return;
 
     setLoadingEntries(true);
     try {
@@ -141,7 +158,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   }, [userIdForData, refreshAllData]);
 
   useEffect(() => {
-    if (!userIdForData) return;
+    if (!client || !userIdForData) return;
 
     const sub = client.graphql({
       query: onCreateLedgerEntry,
@@ -161,12 +178,17 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   }, [userIdForData, client]);
 
   const handlePaymentRequest = async () => {
+    if (!client) return;
+
     setPaymentRequestLoading(true);
     setPaymentRequestError(null);
     setPaymentRequestSuccess(null);
     try {
       if (!userEmail) throw new Error("User email is not available for payment request.");
-      const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue * ADVANCE_RATE || 0;
+      const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue
+        ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE
+        : 0;
+
       if (amountToRequest <= 0) {
         throw new Error("Calculated amount for payment request is zero or negative.");
       }
@@ -189,11 +211,12 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
   };
 
   const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
+    if (!client || !userIdForData) {
+      setError("Cannot add entry: User ID or client not available.");
+      return;
+    }
+
     try {
-      if (!userIdForData) {
-        setError("Cannot add entry: User ID for data not available.");
-        return;
-      }
       const input: AdminCreateLedgerEntryInput = {
         amount: newEntry.amount || 0,
         description: newEntry.description || '',
@@ -211,7 +234,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     }
   };
 
-  if (loadingEntries || loadingStatus || loadingTransactions) {
+  if (!client || loadingEntries || loadingStatus || loadingTransactions) {
     return (
       <View className="sales-ledger-loader">
         <Loader variation="linear" size="large" />
@@ -230,6 +253,10 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
     );
   }
 
+  const calculatedAdvance = accountStatus?.totalUnapprovedInvoiceValue
+    ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE
+    : 0;
+
   return (
     <View className="sales-ledger-container">
       <h2>Sales Ledger for {userCompanyName || 'Your Business'}</h2>
@@ -241,7 +268,7 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         isLoading={paymentRequestLoading}
         requestError={paymentRequestError}
         requestSuccess={paymentRequestSuccess}
-        calculatedAdvance={accountStatus ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE : 0}
+        calculatedAdvance={calculatedAdvance}
       />
       <ManageAccountStatus selectedOwnerSub={userIdForData} />
       <LedgerHistory entries={entries} />
