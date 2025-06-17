@@ -7,6 +7,7 @@ import {
   listCurrentAccountTransactions
 } from './graphql/operations/queries';
 import {
+  createLedgerEntry,
   adminCreateLedgerEntry,
   sendPaymentRequestEmail
 } from './graphql/operations/mutations';
@@ -15,6 +16,7 @@ import {
   type LedgerEntry,
   type AccountStatus,
   type CurrentAccountTransaction,
+  type CreateLedgerEntryInput,
   type AdminCreateLedgerEntryInput,
   type SendPaymentRequestInput
 } from './graphql/API';
@@ -24,9 +26,9 @@ import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
 import ManageAccountStatus from './ManageAccountStatus';
-import { Loader, Text, Alert, View, Card, Heading, Flex } from '@aws-amplify/ui-react';
+import { Loader, Text, Alert, View, Card, Heading } from '@aws-amplify/ui-react';
 
-const ADVANCE_RATE = 0.90;
+const ADVANCE_RATE = 0.9;
 
 interface SalesLedgerProps {
   targetUserId?: string | null;
@@ -36,21 +38,12 @@ interface SalesLedgerProps {
 
 function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedgerProps) {
   const [client, setClient] = useState<any>(null);
-  const [loggedInUserSub, setLoggedInUserSub] = useState<string | null>(loggedInUser.username);
-  const [userEmail, setUserEmail] = useState<string | null>(loggedInUser.attributes?.email ?? null);
-  const [userCompanyName, setUserCompanyName] = useState<string | null>(loggedInUser.attributes?.['custom:company_name'] ?? null);
   const [userIdForData, setUserIdForData] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [loadingEntries, setLoadingEntries] = useState(true);
   const [accountStatus, setAccountStatus] = useState<AccountStatus | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
-  const [loadingTransactions, setLoadingTransactions] = useState(true);
-
-  const [paymentRequestLoading, setPaymentRequestLoading] = useState(false);
-  const [paymentRequestError, setPaymentRequestError] = useState<string | null>(null);
-  const [paymentRequestSuccess, setPaymentRequestSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,230 +53,143 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
         const user = await getCurrentUser();
         if (user) {
           setClient(generateClient());
+          const sub = user?.username || user?.attributes?.sub;
+          setUserIdForData(isAdmin ? targetUserId : sub);
         }
       } catch (err) {
         console.error("Failed to get current user:", err);
       }
     };
     setupClient();
-  }, []);
-
-  useEffect(() => {
-    if (isAdmin && targetUserId) {
-      setUserIdForData(targetUserId);
-    } else if (!isAdmin && loggedInUserSub) {
-      setUserIdForData(loggedInUserSub);
-    } else {
-      setUserIdForData(null);
-    }
-  }, [isAdmin, targetUserId, loggedInUserSub]);
+  }, [isAdmin, targetUserId]);
 
   const fetchAllLedgerEntries = useCallback(async (ownerId: string): Promise<LedgerEntry[]> => {
     if (!client) return [];
-
-    let allEntries: LedgerEntry[] = [];
+    let all: LedgerEntry[] = [];
     let nextToken: string | undefined = undefined;
-    try {
-      do {
-        const response = await client.graphql({
-          query: listLedgerEntries,
-          variables: {
-            filter: { owner: { eq: ownerId } },
-            nextToken,
-            limit: 50,
-          },
-          authMode: 'userPool',
-        });
-        const items = response?.data?.listLedgerEntries?.items?.filter(Boolean) as LedgerEntry[] || [];
-        allEntries = [...allEntries, ...items];
-        nextToken = response?.data?.listLedgerEntries?.nextToken || undefined;
-      } while (nextToken);
-      return allEntries;
-    } catch (err) {
-      console.error("Error in fetchAllLedgerEntries:", err);
-      setError("Failed to load ledger entries.");
-      throw err;
-    }
+
+    do {
+      const res = await client.graphql({
+        query: listLedgerEntries,
+        variables: {
+          filter: { owner: { eq: ownerId } },
+          nextToken,
+          limit: 50,
+        },
+        authMode: 'userPool'
+      });
+      const items = res?.data?.listLedgerEntries?.items?.filter(Boolean) || [];
+      all.push(...items);
+      nextToken = res?.data?.listLedgerEntries?.nextToken;
+    } while (nextToken);
+    return all;
   }, [client]);
 
   const refreshAllData = useCallback(async () => {
     if (!client || !userIdForData) return;
-
-    setLoadingEntries(true);
+    setLoading(true);
     try {
-      const entriesResponse = await fetchAllLedgerEntries(userIdForData);
-      setEntries(entriesResponse);
-    } catch {
-      setError("Failed to load ledger history.");
-    } finally {
-      setLoadingEntries(false);
-    }
+      const [ledger, status, transactions] = await Promise.all([
+        fetchAllLedgerEntries(userIdForData),
+        client.graphql({
+          query: listAccountStatuses,
+          variables: { filter: { owner: { eq: userIdForData } }, limit: 1 },
+          authMode: 'userPool'
+        }),
+        client.graphql({
+          query: listCurrentAccountTransactions,
+          variables: { filter: { owner: { eq: userIdForData } } },
+          authMode: 'userPool'
+        })
+      ]);
 
-    setLoadingStatus(true);
-    try {
-      const statusResponse = await client.graphql({
-        query: listAccountStatuses,
-        variables: { owner: userIdForData, limit: 1 },
-        authMode: 'userPool',
-      });
-      const statusItem = statusResponse?.data?.listAccountStatuses?.items?.[0] || null;
-      setAccountStatus(statusItem);
-    } catch {
-      setError("Failed to load account status.");
+      setEntries(ledger);
+      setAccountStatus(status?.data?.listAccountStatuses?.items?.[0] || null);
+      setCurrentAccountTransactions(transactions?.data?.listCurrentAccountTransactions?.items || []);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to refresh data.");
     } finally {
-      setLoadingStatus(false);
+      setLoading(false);
     }
-
-    setLoadingTransactions(true);
-    try {
-      const transactionsResponse = await client.graphql({
-        query: listCurrentAccountTransactions,
-        variables: { filter: { owner: { eq: userIdForData } } },
-        authMode: 'userPool',
-      });
-      const transactionItems = transactionsResponse?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) as CurrentAccountTransaction[] || [];
-      setCurrentAccountTransactions(transactionItems);
-    } catch {
-      setError("Failed to load account transactions.");
-    } finally {
-      setLoadingTransactions(false);
-    }
-  }, [userIdForData, fetchAllLedgerEntries, client]);
+  }, [client, userIdForData, fetchAllLedgerEntries]);
 
   useEffect(() => {
-    refreshAllData();
-  }, [userIdForData, refreshAllData]);
+    if (client && userIdForData) refreshAllData();
+  }, [client, userIdForData, refreshAllData]);
 
   useEffect(() => {
     if (!client || !userIdForData) return;
-
     const sub = client.graphql({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
-      authMode: 'userPool',
+      authMode: 'userPool'
     }).subscribe({
       next: ({ data }) => {
-        const newEntry = data.onCreateLedgerEntry;
-        if (newEntry) {
-          setEntries(prevEntries => [newEntry, ...prevEntries]);
+        if (data?.onCreateLedgerEntry) {
+          setEntries((prev) => [data.onCreateLedgerEntry, ...prev]);
         }
       },
-      error: (subscriptionError) => console.error("Subscription error:", subscriptionError)
+      error: (err) => console.error("Subscription error:", err)
     });
-
     return () => sub.unsubscribe();
-  }, [userIdForData, client]);
-
-  const handlePaymentRequest = async () => {
-    if (!client) return;
-
-    setPaymentRequestLoading(true);
-    setPaymentRequestError(null);
-    setPaymentRequestSuccess(null);
-    try {
-      if (!userEmail) throw new Error("User email is not available for payment request.");
-      const amountToRequest = accountStatus?.totalUnapprovedInvoiceValue
-        ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE
-        : 0;
-
-      if (amountToRequest <= 0) {
-        throw new Error("Calculated amount for payment request is zero or negative.");
-      }
-
-      const input: SendPaymentRequestInput = {
-        amount: amountToRequest,
-        toEmail: userEmail,
-      };
-      await client.graphql({
-        query: sendPaymentRequestEmail,
-        variables: { input },
-        authMode: 'userPool',
-      });
-      setPaymentRequestSuccess("Payment request sent successfully!");
-    } catch (error) {
-      setPaymentRequestError("Failed to submit payment request: " + (error as Error).message);
-    } finally {
-      setPaymentRequestLoading(false);
-    }
-  };
+  }, [client, userIdForData]);
 
   const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
-    if (!client || !userIdForData) {
-      setError("Cannot add entry: User ID or client not available.");
-      return;
-    }
+    if (!client || !userIdForData) return;
 
     try {
-      const input: AdminCreateLedgerEntryInput = {
-        amount: newEntry.amount || 0,
-        description: newEntry.description || '',
-        type: newEntry.type,
-        targetUserId: userIdForData,
-      };
-      await client.graphql({
-        query: adminCreateLedgerEntry,
-        variables: { input },
-        authMode: 'userPool',
-      });
-      refreshAllData();
-    } catch {
-      setError("Failed to add ledger entry. Please try again.");
+      if (isAdmin) {
+        const input: AdminCreateLedgerEntryInput = {
+          targetUserId: userIdForData,
+          amount: newEntry.amount || 0,
+          type: newEntry.type,
+          description: newEntry.description || ''
+        };
+        await client.graphql({
+          query: adminCreateLedgerEntry,
+          variables: { input },
+          authMode: 'userPool'
+        });
+      } else {
+        const input: CreateLedgerEntryInput = {
+          amount: newEntry.amount || 0,
+          type: newEntry.type,
+          description: newEntry.description || ''
+        };
+        await client.graphql({
+          query: createLedgerEntry,
+          variables: { input },
+          authMode: 'userPool'
+        });
+      }
+      await refreshAllData();
+    } catch (err) {
+      console.error("Add entry failed:", err);
+      setError("Failed to add ledger entry.");
     }
   };
 
-  if (!client || loadingEntries || loadingStatus || loadingTransactions) {
-    return (
-      <View className="sales-ledger-loader">
-        <Loader variation="linear" size="large" />
-        <Text>Loading ledger data...</Text>
-      </View>
-    );
-  }
+  if (loading) return <Loader />;
+  if (error) return <Alert variation="error">{error}</Alert>;
 
-  if (error) {
-    return (
-      <View className="sales-ledger-error">
-        <Alert variation="error">
-          <Text>{error}</Text>
-        </Alert>
-      </View>
-    );
-  }
-
-  const calculatedAdvance = accountStatus?.totalUnapprovedInvoiceValue
-    ? accountStatus.totalUnapprovedInvoiceValue * ADVANCE_RATE
-    : 0;
+  const balance = accountStatus?.totalUnapprovedInvoiceValue || 0;
+  const currentAccount = accountStatus?.currentAccountBalance || 0;
+  const gross = balance * ADVANCE_RATE;
+  const net = gross - currentAccount;
 
   return (
-    <View className="sales-ledger-container">
-      <h2>Sales Ledger for {userCompanyName || 'Your Business'}</h2>
-      <CurrentBalance balance={accountStatus?.totalUnapprovedInvoiceValue || 0} />
+    <View>
+      <CurrentBalance balance={balance} />
       <AvailabilityDisplay
-        currentSalesLedgerBalance={accountStatus?.totalUnapprovedInvoiceValue || 0}
-        totalUnapprovedInvoiceValue={accountStatus?.totalUnapprovedInvoiceValue || 0}
-        grossAvailability={calculatedAdvance}
-        netAvailability={calculatedAdvance - (accountStatus?.currentAccountBalance || 0)}
-        currentAccountBalance={accountStatus?.currentAccountBalance || 0}
+        currentSalesLedgerBalance={balance}
+        totalUnapprovedInvoiceValue={balance}
+        grossAvailability={gross}
+        netAvailability={net}
+        currentAccountBalance={currentAccount}
       />
       <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
-      <PaymentRequestForm
-        onSubmitRequest={handlePaymentRequest}
-        isLoading={paymentRequestLoading}
-        requestError={paymentRequestError}
-        requestSuccess={paymentRequestSuccess}
-        netAvailability={calculatedAdvance - (accountStatus?.currentAccountBalance || 0)}
-      />
-      <ManageAccountStatus selectedOwnerSub={userIdForData} />
-
-      <Card variation="elevated" marginTop="medium">
-        <Heading level={4} marginBottom="small">Sales Ledger History</Heading>
-        <LedgerHistory entries={entries} isLoading={loadingEntries} />
-      </Card>
-
-      <Card variation="elevated" marginTop="medium">
-        <Heading level={4} marginBottom="small">Current Account Transactions</Heading>
-        <LedgerHistory entries={currentAccountTransactions} isLoading={loadingTransactions} />
-      </Card>
+      <LedgerHistory entries={entries} isLoading={false} />
     </View>
   );
 }
