@@ -1,7 +1,10 @@
-// handler.ts in adminDataActions Lambda
-
+// handler.ts
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 
 const DDB_TABLE_TRANSACTIONS = process.env.CURRENT_ACCT_TABLE_NAME;
@@ -16,6 +19,9 @@ if (!DDB_TABLE_TRANSACTIONS || !DDB_TABLE_ACCOUNT_STATUS || !DDB_TABLE_SALES_LED
 
 const ddbClient = new DynamoDBClient({ region: AWS_REGION });
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+
+type CurrentAccountTransactionType = "CASH_RECEIPT" | "PAYMENT_REQUEST";
+type LedgerEntryType = "INVOICE" | "CASH_RECEIPT" | "CREDIT_NOTE" | "INCREASE_ADJUSTMENT" | "DECREASE_ADJUSTMENT";
 
 interface AppSyncEventArguments {
   targetOwnerId?: string;
@@ -44,9 +50,6 @@ interface AppSyncEvent {
     parentTypeName: string;
   };
 }
-
-type CurrentAccountTransactionType = "CASH_RECEIPT" | "PAYMENT_REQUEST";
-type LedgerEntryType = "INVOICE" | "CASH_RECEIPT" | "CREDIT_NOTE" | "INCREASE_ADJUSTMENT" | "DECREASE_ADJUSTMENT";
 
 function isAdmin(groups: string[] | null | undefined): boolean {
   return !!groups?.includes(ADMIN_GROUP_NAME);
@@ -185,9 +188,33 @@ export const handler = async (event: AppSyncEvent): Promise<any> => {
             ConditionExpression: "attribute_not_exists(id)",
           })
         );
+
+        // 🔁 Update AccountStatus balance if this entry affects it
+        const delta =
+          input.type === "INVOICE" || input.type === "INCREASE_ADJUSTMENT"
+            ? input.amount
+            : input.type === "CREDIT_NOTE" || input.type === "DECREASE_ADJUSTMENT"
+            ? -input.amount
+            : 0;
+
+        if (delta !== 0) {
+          await ddbDocClient.send(
+            new UpdateCommand({
+              TableName: DDB_TABLE_ACCOUNT_STATUS,
+              Key: { id: input.targetUserId },
+              UpdateExpression: "SET totalUnapprovedInvoiceValue = if_not_exists(totalUnapprovedInvoiceValue, :zero) + :delta, updatedAt = :now",
+              ExpressionAttributeValues: {
+                ":delta": delta,
+                ":now": new Date().toISOString(),
+                ":zero": 0,
+              },
+            })
+          );
+        }
+
         return entry;
       } catch (err: any) {
-        console.error("Error creating ledger entry:", err);
+        console.error("Error creating ledger entry or updating AccountStatus:", err);
         throw new Error(`CreateLedgerEntryError: ${err.message}`);
       }
     }

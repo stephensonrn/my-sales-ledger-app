@@ -1,0 +1,30 @@
+## InvokeAccountStatusUpdateFunction.req.vtl
+
+#set($entry = $ctx.prev.result)
+#set($owner = $entry.owner)
+#set($entryType = $entry.type)
+#set($entryAmount = $entry.amount)
+
+## Prepare the update amounts
+#set($invoiceValueChange = 0)
+
+#if($entryType == "INVOICE" || $entryType == "ADJUSTMENT_INCREASE")
+  #set($invoiceValueChange = $entryAmount)
+#elseif($entryType == "CREDIT_NOTE" || $entryType == "ADJUSTMENT_DECREASE" || $entryType == "CASH_RECEIPT")
+  #set($invoiceValueChange = -1 * $entryAmount)
+#end
+
+{
+  "version": "2018-05-29",
+  "operation": "UpdateItem",
+  "key": {
+    "owner": $util.dynamodb.toDynamoDB($owner)
+  },
+  "update": {
+    "expression": "SET totalUnapprovedInvoiceValue = if_not_exists(totalUnapprovedInvoiceValue, :zero) + :invoiceChange",
+    "expressionValues": {
+      ":invoiceChange": $util.dynamodb.toDynamoDB($invoiceValueChange),
+      ":zero": { "N": "0" }
+    }
+  }
+}

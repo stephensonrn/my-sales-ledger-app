@@ -1,0 +1,23 @@
+## InvokeLedgerEntryPutFunction.req.vtl
+
+#set($input = $ctx.args.input)
+#set($id = $util.autoId())
+#set($now = $util.time.nowISO8601())
+#set($owner = $ctx.identity.sub)
+
+{
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "id": $util.dynamodb.toDynamoDB($id)
+  },
+  "attributeValues": {
+    "id": $util.dynamodb.toDynamoDB($id),
+    "owner": $util.dynamodb.toDynamoDB($owner),
+    "amount": $util.dynamodb.toDynamoDB($input.amount),
+    "type": $util.dynamodb.toDynamoDB($input.type),
+    "description": $util.dynamodb.toDynamoDB($input.description),
+    "createdAt": $util.dynamodb.toDynamoDB($now),
+    "updatedAt": $util.dynamodb.toDynamoDB($now)
+  }
+}

@@ -1,0 +1,8 @@
+## CreateLedgerEntry.pipeline.res.vtl
+
+#if ($ctx.error)
+  $util.error($ctx.error.message, $ctx.error.type)
+#end
+
+## Return the final result from the last function in the pipeline
+$util.toJson($ctx.result)

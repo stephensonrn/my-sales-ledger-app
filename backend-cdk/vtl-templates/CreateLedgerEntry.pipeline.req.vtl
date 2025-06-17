@@ -1,0 +1,34 @@
+## CreateLedgerEntry.pipeline.req.vtl
+
+## Extract input and current user
+#set( $input = $ctx.args.input )
+#set( $userId = $ctx.identity.sub )
+#set( $now = $util.time.nowISO8601() )
+
+## Generate a unique ID if not provided
+#if( !$input.containsKey("id") || $util.isNullOrEmpty($input.id) )
+  #set( $entryId = $util.autoId() )
+#else
+  #set( $entryId = $input.id )
+#end
+
+## Construct the item to insert into LedgerEntry table
+#set( $ledgerEntryItem = {
+  "id": $entryId,
+  "owner": $userId,
+  "type": $input.type,
+  "amount": $input.amount,
+  "description": $util.defaultIfNull($input.description, ""),
+  "createdAt": $now,
+  "updatedAt": $now,
+  "createdByAdmin": false
+} )
+
+## Prepare payload for function 1 (Put LedgerEntry)
+{
+  "version": "2018-05-29",
+  "payload": {
+    "action": "putLedgerEntry",
+    "item": $ledgerEntryItem
+  }
+}
