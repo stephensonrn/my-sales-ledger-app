@@ -13,15 +13,15 @@ export function useAdminAuth() {
     setIsLoading(true);
 
     try {
-      const groups: string[] | undefined = oidc.user?.profile?.['cognito:groups'];
+      const profile = oidc.user?.profile;
+      console.log('Full OIDC User Profile:', profile);
+
+      const groups: string[] | undefined = 
+        profile?.['cognito:groups'] || profile?.['groups'];
 
       console.log('User groups (from ID token):', groups);
 
-      if (groups?.includes('Admin')) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
+      setIsAdmin(groups?.includes('Admin') ?? false);
     } catch (err) {
       console.warn('Error checking admin group:', err);
       setIsAdmin(false);
