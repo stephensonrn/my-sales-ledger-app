@@ -1,27 +1,35 @@
+// src/hooks/useAdminAuth.ts
 import { useEffect, useState } from 'react';
-import { useOidc } from 'react-oidc-context';
+import { useAuth } from 'react-oidc-context';
 
 export function useAdminAuth() {
-  const { user, isLoading: oidcLoading } = useOidc();
+  const oidc = useAuth();
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (oidcLoading) return;
+    setIsLoading(true);
 
-    if (user && user.profile) {
-      // This assumes that the user's groups are in the 'cognito:groups' claim
-      const groups: string[] | undefined = user.profile['cognito:groups'];
+    try {
+      const groups: string[] | undefined = oidc.user?.profile?.['cognito:groups'];
 
-      console.log('User groups from OIDC profile:', groups);
+      console.log('User groups (from ID token):', groups);
 
-      setIsAdmin(groups?.includes('Admin') || false);
-    } else {
+      if (groups?.includes('Admin')) {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+    } catch (err) {
+      console.warn('Error checking admin group:', err);
       setIsAdmin(false);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
     }
+  }, [oidc.user]);
 
-    setIsLoading(false);
-  }, [user, oidcLoading]);
-
-  return { isAdmin, isLoading };
+  return { isAdmin, isLoading, error };
 }

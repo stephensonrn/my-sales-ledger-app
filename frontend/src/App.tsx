@@ -1,5 +1,5 @@
 import React from 'react';
-import { useOidc, useOidcUser } from 'react-oidc-context';
+import { useAuth } from 'react-oidc-context';
 import { Button, Heading, View, Flex } from '@aws-amplify/ui-react';
 
 import SalesLedger from './SalesLedger';
@@ -10,15 +10,13 @@ import './App.css';
 import aurumLogo from '/Aurum.png';
 
 function App() {
-  const oidc = useOidc();
-  const oidcUser = useOidcUser();
-
+  const oidc = useAuth();
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
 
   if (oidc.isLoading) return <div>Loading authentication...</div>;
   if (oidc.error) return <div>Authentication error: {oidc.error.message}</div>;
 
-  if (!oidcUser || !oidcUser.profile) {
+  if (!oidc.user || !oidc.user.profile) {
     return (
       <View padding="medium" textAlign="center">
         <Heading level={3}>Welcome to Sales Ledger</Heading>
@@ -27,7 +25,7 @@ function App() {
     );
   }
 
-  const displayName = oidcUser.profile.name || oidcUser.profile.email || 'User';
+  const displayName = oidc.user.profile.name || oidc.user.profile.email || 'User';
 
   return (
     <View padding="medium">
@@ -51,9 +49,9 @@ function App() {
         {isAdminLoading ? (
           <p>Verifying permissions...</p>
         ) : isAdmin ? (
-          <AdminPage loggedInUser={oidcUser.profile} />
+          <AdminPage loggedInUser={oidc.user.profile} />
         ) : (
-          <SalesLedger loggedInUser={oidcUser.profile} />
+          <SalesLedger loggedInUser={oidc.user.profile} />
         )}
       </main>
     </View>
