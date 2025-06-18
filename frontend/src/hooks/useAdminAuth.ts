@@ -1,24 +1,35 @@
-useEffect(() => {
-  setIsLoading(true);
+// src/hooks/useAdminAuth.ts
+import { useEffect, useState } from 'react';
+import { useAuth } from 'react-oidc-context';
 
-  try {
-    const profile = oidc.user?.profile;
-    console.log('Full OIDC User Profile:', profile);
+export function useAdminAuth() {
+  const oidc = useAuth();
 
-    const groups = Array.isArray(profile?.['cognito:groups'])
-      ? profile['cognito:groups']
-      : Array.isArray(profile?.['groups'])
-        ? profile['groups']
-        : [];
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-    console.log('User groups (from ID token):', groups);
+  useEffect(() => {
+    setIsLoading(true);
 
-    setIsAdmin(groups.includes('Admin'));
-  } catch (err) {
-    console.warn('Error checking admin group:', err);
-    setIsAdmin(false);
-    setError(err as Error);
-  } finally {
-    setIsLoading(false);
-  }
-}, [oidc.user]);
+    try {
+      const profile = oidc.user?.profile;
+      console.log('Full OIDC User Profile:', profile);
+
+      const groups: string[] | undefined = 
+        profile?.['cognito:groups'] || profile?.['groups'];
+
+      console.log('User groups (from ID token):', groups);
+
+      setIsAdmin(groups?.includes('Admin') ?? false);
+    } catch (err) {
+      console.warn('Error checking admin group:', err);
+      setIsAdmin(false);
+      setError(err as Error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [oidc.user]);
+
+  return { isAdmin, isLoading, error };
+}
