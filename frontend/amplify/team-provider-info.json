@@ -10,6 +10,11 @@
       "StackName": "amplify-salesledgerfrontend-dev-9011c",
       "StackId": "arn:aws:cloudformation:eu-north-1:277707134311:stack/amplify-salesledgerfrontend-dev-9011c/db8adb90-3b23-11f0-9df2-0e6b37e6d339",
       "AmplifyAppId": "d6evuq5d5sl2m"
+    },
+    "categories": {
+      "auth": {
+        "salesledgerfrontend3cb17ff9": {}
+      }
     }
   }
 }

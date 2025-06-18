@@ -2,5 +2,43 @@
   "aws_project_region": "eu-north-1",
   "aws_appsync_graphqlEndpoint": "https://yik7x25zqne6jnnzvymp5c3c7m.appsync-api.eu-west-1.amazonaws.com/graphql",
   "aws_appsync_region": "eu-north-1",
-  "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS"
+  "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS",
+  "aws_cognito_identity_pool_id": "eu-north-1:f67619eb-8836-4c82-9c69-c4442c188138",
+  "aws_cognito_region": "eu-north-1",
+  "aws_user_pools_id": "eu-north-1_p4LG5l1wq",
+  "aws_user_pools_web_client_id": "601bcenoads0vgkdb8c5vutt69",
+  "oauth": {},
+  "aws_cognito_username_attributes": [
+    "EMAIL"
+  ],
+  "aws_cognito_social_providers": [],
+  "aws_cognito_signup_attributes": [
+    "EMAIL"
+  ],
+  "aws_cognito_mfa_configuration": "OFF",
+  "aws_cognito_mfa_types": [
+    "SMS"
+  ],
+  "aws_cognito_password_protection_settings": {
+    "passwordPolicyMinLength": 8,
+    "passwordPolicyCharacters": []
+  },
+  "aws_cognito_verification_mechanisms": [
+    "EMAIL"
+  ],
+  "Auth": {
+    "region": "eu-west-1",
+    "userPoolId": "eu-west-1_i09IJ2ySB",
+    "userPoolWebClientId": "6ss392f5cf89ad1obkgefq23di",
+    "oauth": {
+      "domain": "auth.salesledgersync.com",
+      "scope": [
+        "email",
+        "openid"
+      ],
+      "redirectSignIn": "https://www.salesledgersync.com/callback",
+      "redirectSignOut": "https://www.salesledgersync.com/logout",
+      "responseType": "code"
+    }
+  }
 }
