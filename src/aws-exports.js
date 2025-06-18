@@ -12,7 +12,7 @@ const awsmobile = {
     "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS", // Assumed from your schema's @aws_cognito_user_pools
 
     // --- Cognito User Pool (Authentication) Configuration ---
-    "aws_user_pools_id": "eu-west-1_jIa2hOCaZ", // From OutputKey: "UserPoolIdOutput"
+    "aws_user_pools_id": "eu-west-1_i09IJ2ySB", // From OutputKey: "UserPoolIdOutput"
     "aws_user_pools_web_client_id": "3br2lv10rbfjt4v12j3lonemfm", // From OutputKey: "UserPoolClientIdOutput"
     // "aws_cognito_identity_pool_id": "YOUR_IDENTITY_POOL_ID_FROM_CDK_OUTPUT", // OPTIONAL: Only if you have an Identity Pool in your CDK
 
