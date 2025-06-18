@@ -1,0 +1,27 @@
+/* tslint:disable */
+/* eslint-disable */
+// this is an auto generated file. This will be overwritten
+
+import * as APITypes from "../API";
+type GeneratedSubscription<InputType, OutputType> = string & {
+  __generatedSubscriptionInput: InputType;
+  __generatedSubscriptionOutput: OutputType;
+};
+
+export const onCreateLedgerEntry = /* GraphQL */ `subscription OnCreateLedgerEntry($owner: String) {
+  onCreateLedgerEntry(owner: $owner) {
+    owner
+    id
+    type
+    amount
+    description
+    createdAt
+    updatedAt
+    createdByAdmin
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.OnCreateLedgerEntrySubscriptionVariables,
+  APITypes.OnCreateLedgerEntrySubscription
+>;

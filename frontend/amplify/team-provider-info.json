@@ -4,11 +4,11 @@
       "AuthRoleName": "amplify-salesledgerfrontend-dev-9011c-authRole",
       "UnauthRoleArn": "arn:aws:iam::277707134311:role/amplify-salesledgerfrontend-dev-9011c-unauthRole",
       "AuthRoleArn": "arn:aws:iam::277707134311:role/amplify-salesledgerfrontend-dev-9011c-authRole",
-      "Region": "eu-west-1",
+      "Region": "eu-north-1",
       "DeploymentBucketName": "amplify-salesledgerfrontend-dev-9011c-deployment",
       "UnauthRoleName": "amplify-salesledgerfrontend-dev-9011c-unauthRole",
       "StackName": "amplify-salesledgerfrontend-dev-9011c",
-      "StackId": "arn:aws:cloudformation:eu-west-1:277707134311:stack/amplify-salesledgerfrontend-dev-9011c/db8adb90-3b23-11f0-9df2-0e6b37e6d339",
+      "StackId": "arn:aws:cloudformation:eu-north-1:277707134311:stack/amplify-salesledgerfrontend-dev-9011c/db8adb90-3b23-11f0-9df2-0e6b37e6d339",
       "AmplifyAppId": "d6evuq5d5sl2m"
     }
   }

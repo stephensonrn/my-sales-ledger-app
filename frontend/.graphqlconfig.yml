@@ -1,24 +1,19 @@
-# frontend/.graphqlconfig.yml
 projects:
-  codegen: # Or "Codegen Project" - your project name key
-    schemaPath: "schema.graphql" # Ensure frontend/schema.graphql is your up-to-date schema
+  SalesLedgerApi-SalesLedgerApp-Backend-eu-west-1:
+    schemaPath: src/graphql/schema.json
     includes:
-      # Be very specific: point only to the directory where you MANUALLY created your .graphql operation files
-      - "src/graphql/operations/**/*.graphql" 
+      - src/graphql/**/*.ts
     excludes:
       - ./amplify/**
-      - "src/models/**"         # If you use DataStore
-      - "src/aws-exports.js"    # If it exists
-      - "src/graphql/API.ts"    # Exclude the output file itself
+      - src/API.ts
     extensions:
       amplify:
         codeGenTarget: typescript
-        generatedFileName: "src/graphql/API.ts" # All generated TS types AND operation documents here
-        region: "eu-west-1"
-        apiId: "mglrg2nkw5dereoh7q3cyuv65m" 
-        frontend: typescript
-        framework: react
-        maxDepth: 3 
+        generatedFileName: src/API.ts
+        docsFilePath: src/graphql
+        region: eu-west-1
+        apiId: mglrg2nkw5dereoh7q3cyuv65m
+        maxDepth: 2
 extensions:
   amplify:
     version: 3
