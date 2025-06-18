@@ -1,9 +1,9 @@
-// src/oidc-config.ts
 export const oidcConfig = {
-  authority: 'https://auth.salesledgersync.com', // your Cognito domain
+  authority: 'https://auth.salesledgersync.com',
   client_id: '28889re05prqhvu9kr7g5jtdid',
-  redirect_uri: 'https://www.salesledgersync.com', // or http://localhost:5173
+  redirect_uri: 'https://www.salesledgersync.com',
   post_logout_redirect_uri: 'https://www.salesledgersync.com',
   response_type: 'code',
   scope: 'openid profile email',
+  metadataUrl: 'https://auth.salesledgersync.com/.well-known/openid-configuration'
 };
