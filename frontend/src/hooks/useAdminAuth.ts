@@ -1,35 +1,44 @@
 // src/hooks/useAdminAuth.ts
 import { useEffect, useState } from 'react';
-import { useAuth } from 'react-oidc-context';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 export function useAdminAuth() {
-  const oidc = useAuth();
-
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    setIsLoading(true);
+    let isMounted = true;
 
-    try {
-      const profile = oidc.user?.profile;
-      console.log('Full OIDC User Profile:', profile);
+    const checkGroups = async () => {
+      try {
+        const session = await fetchAuthSession();
+        const groups = session.tokens?.idToken?.payload['cognito:groups'];
 
-      const groups: string[] | undefined = 
-        profile?.['cognito:groups'] || profile?.['groups'];
+        console.log('User groups from session:', groups);
 
-      console.log('User groups (from ID token):', groups);
+        if (isMounted) {
+          setIsAdmin(Array.isArray(groups) && groups.includes('Admin'));
+        }
+      } catch (err) {
+        console.warn('Error fetching auth session:', err);
+        if (isMounted) {
+          setIsAdmin(false);
+          setError(err as Error);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
 
-      setIsAdmin(groups?.includes('Admin') ?? false);
-    } catch (err) {
-      console.warn('Error checking admin group:', err);
-      setIsAdmin(false);
-      setError(err as Error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oidc.user]);
+    checkGroups();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return { isAdmin, isLoading, error };
 }
