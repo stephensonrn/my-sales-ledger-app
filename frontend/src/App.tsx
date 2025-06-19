@@ -42,7 +42,8 @@ function AuthenticatedContent() {
     context.signOut,
   ]);
 
-  const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
+  const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } =
+    useAdminAuth();
 
   const displayName =
     user?.signInDetails?.loginId || user?.username || 'User';
@@ -84,7 +85,11 @@ function AuthenticatedContent() {
 
 function App() {
   return (
-    <Authenticator components={components}>
+    <Authenticator
+      loginMechanisms={['email']}
+      signUpAttributes={['email']}
+      components={components}
+    >
       <AuthenticatedContent />
     </Authenticator>
   );
