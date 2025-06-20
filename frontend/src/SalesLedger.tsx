@@ -36,28 +36,58 @@ interface SalesLedgerProps {
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [client] = useState(generateClient());
-  
-  // Data State
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
   const [error, setError] = useState<string | null>(null);
-  
-  // State Machine for Auth and Data Loading
   const [authStatus, setAuthStatus] = useState<AuthStatus>('CHECKING');
   const [ownerId, setOwnerId] = useState<string | null>(null);
 
-  // --- Effect 1: Manages Authentication State ---
-  // This effect runs only once to set up auth listeners.
+  const loadData = useCallback(async (userId: string) => {
+    setError(null);
+    setAuthStatus('CHECKING'); // Show loader while fetching
+    try {
+      console.log(`[SalesLedger] Loading data for owner: ${userId}`);
+      let allLedgerEntries: LedgerEntry[] = [];
+      let nextToken: string | null | undefined = null;
+      do {
+        const ledgerRes: any = await client.graphql({
+          query: listLedgerEntries,
+          variables: { filter: { owner: { eq: userId } }, limit: 100, nextToken }
+        });
+        const ledgerItems = ledgerRes?.data?.listLedgerEntries?.items?.filter(Boolean) || [];
+        allLedgerEntries.push(...ledgerItems);
+        nextToken = ledgerRes?.data?.listLedgerEntries?.nextToken;
+      } while (nextToken);
+
+      const transactionsRes: any = await client.graphql({
+        query: listCurrentAccountTransactions,
+        variables: { filter: { owner: { eq: userId } } }
+      });
+      const transactionItems = transactionsRes?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) || [];
+
+      setEntries(allLedgerEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setCurrentAccountTransactions(transactionItems);
+      setAuthStatus('AUTHENTICATED'); // Data loaded successfully
+    } catch (err) {
+      console.error("Error loading data:", err);
+      setError("Failed to load ledger data. Please refresh.");
+      setAuthStatus('GUEST'); // Fallback to guest state on error
+    }
+  }, [client]);
+
   useEffect(() => {
-    const checkCurrentUser = async () => {
+    const checkCurrentUser = async (isInitialMount = false) => {
       try {
+        // Give Amplify a moment to settle, especially after a login redirect
+        if (!isInitialMount) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
         const user = await getCurrentUser();
         const currentOwnerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
         if (currentOwnerId) {
-            setOwnerId(currentOwnerId);
-            setAuthStatus('AUTHENTICATED');
+          setOwnerId(currentOwnerId);
         } else {
-            setAuthStatus('GUEST');
+          setAuthStatus('GUEST');
         }
       } catch (err) {
         setAuthStatus('GUEST');
@@ -75,84 +105,51 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         setCurrentAccountTransactions([]);
       }
     };
-    
+
     const unsubscribeHub = Hub.listen('auth', hubListener);
-    checkCurrentUser(); // Initial check on mount
+    checkCurrentUser(true); // Initial check on mount
 
     return () => unsubscribeHub();
-  }, [isAdmin, targetUserId]); // This dependency array is stable and correct.
+  }, [isAdmin, targetUserId]);
 
-  // --- Effect 2: Reacts to Authentication State to Load Data ---
-  // This effect runs whenever the user's authentication status changes.
+  useEffect(() => {
+    if (ownerId) {
+      loadData(ownerId);
+    }
+  }, [ownerId, loadData]);
+
   useEffect(() => {
     let subscription: any;
-    
-    const loadData = async () => {
-        if (authStatus !== 'AUTHENTICATED' || !ownerId) return;
-        
-        setError(null);
-        try {
-            // Fetch all data...
-            let allLedgerEntries: LedgerEntry[] = [];
-            let nextToken: string | null | undefined = null;
-            do {
-                const ledgerRes: any = await client.graphql({
-                    query: listLedgerEntries,
-                    variables: { filter: { owner: { eq: ownerId } }, limit: 100, nextToken }
-                });
-                const ledgerItems = ledgerRes?.data?.listLedgerEntries?.items?.filter(Boolean) || [];
-                allLedgerEntries.push(...ledgerItems);
-                nextToken = ledgerRes?.data?.listLedgerEntries?.nextToken;
-            } while (nextToken);
-
-            const transactionsRes: any = await client.graphql({
-                query: listCurrentAccountTransactions,
-                variables: { filter: { owner: { eq: ownerId } } }
+    if (ownerId) {
+      subscription = client.graphql({
+        query: onCreateLedgerEntry,
+        variables: { owner: ownerId }
+      }).subscribe({
+        next: ({ data }) => {
+          if (data?.onCreateLedgerEntry) {
+            setEntries((prev) => {
+              const newEntries = [data.onCreateLedgerEntry, ...prev.filter(e => e.id !== data.onCreateLedgerEntry.id)];
+              return newEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             });
-            const transactionItems = transactionsRes?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) || [];
-            
-            setEntries(allLedgerEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-            setCurrentAccountTransactions(transactionItems);
-
-            // ...and then set up subscriptions
-            subscription = client.graphql({
-                query: onCreateLedgerEntry,
-                variables: { owner: ownerId }
-            }).subscribe({
-                next: ({ data }) => {
-                    if (data?.onCreateLedgerEntry) {
-                        setEntries((prev) => [data.onCreateLedgerEntry, ...prev.filter(e => e.id !== data.onCreateLedgerEntry.id)]);
-                    }
-                }
-            });
-
-        } catch (err) {
-            setError("Failed to load ledger data.");
-            console.error("Error in loadData effect:", err);
+          }
         }
-    };
-
-    loadData();
-
+      });
+    }
     return () => {
-        if (subscription) subscription.unsubscribe();
+      if (subscription) subscription.unsubscribe();
     };
-  }, [authStatus, ownerId, client]); // Correctly depends on auth status
+  }, [ownerId, client]);
 
-  // --- Business Logic Calculations (No changes needed) ---
+  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
       switch (entry.type) {
-        case LedgerEntryType.INVOICE:
-        case LedgerEntryType.INCREASE_ADJUSTMENT:
+        case LedgerEntryType.INVOICE: case LedgerEntryType.INCREASE_ADJUSTMENT:
           return acc + amount;
-        case LedgerEntryType.CREDIT_NOTE:
-        case LedgerEntryType.DECREASE_ADJUSTMENT:
-        case LedgerEntryType.CASH_RECEIPT:
+        case LedgerEntryType.CREDIT_NOTE: case LedgerEntryType.DECREASE_ADJUSTMENT: case LedgerEntryType.CASH_RECEIPT:
           return acc - amount;
-        default:
-          return acc;
+        default: return acc;
       }
     }, 0);
   }, [entries]);
@@ -161,36 +158,30 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     return currentAccountTransactions.reduce((acc, tx) => {
       const amount = tx.amount || 0;
       switch (tx.type) {
-        case 'PAYMENT_REQUEST':
-          return acc + amount;
-        case 'CASH_RECEIPT':
-          return acc - amount;
-        default:
-          return acc;
+        case 'PAYMENT_REQUEST': return acc + amount;
+        case 'CASH_RECEIPT': return acc - amount;
+        default: return acc;
       }
     }, 0);
   }, [currentAccountTransactions]);
   
   const approvedSalesLedger = salesLedgerBalance;
-  // THIS IS THE FIX: Changed ADVANCE_rate to ADVANCE_RATE
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handler (Simplified) ---
+  // --- Mutation Handler ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
-    if (authStatus !== 'AUTHENTICATED' || !ownerId) {
-        setError("Cannot add entry: User is not authenticated.");
-        return;
+    if (!ownerId) {
+      setError("Cannot add entry: User is not authenticated.");
+      return;
     }
     try {
-        const input: CreateLedgerEntryInput = {
-          amount: newEntry.amount || 0,
-          type: newEntry.type,
-          description: newEntry.description || ''
-        };
-        // This assumes non-admins are adding entries for themselves.
-        // The owner is automatically set by the backend resolver.
-        await client.graphql({ query: createLedgerEntry, variables: { input } });
+      const input: CreateLedgerEntryInput = {
+        amount: newEntry.amount || 0,
+        type: newEntry.type,
+        description: newEntry.description || ''
+      };
+      await client.graphql({ query: createLedgerEntry, variables: { input } });
     } catch (err) {
       console.error("Add entry failed:", err);
       setError("Failed to add ledger entry.");
@@ -221,7 +212,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         currentAccountBalance={currentAccountBalance}
       />
       <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
-      <LedgerHistory entries={entries} isLoading={false} />
+      <LedgerHistory entries={entries} isLoading={authStatus !== 'AUTHENTICATED'} />
     </View>
   );
 }
