@@ -1,8 +1,6 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
-import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -19,8 +17,7 @@ import {
   type AccountStatus,
   type CreateLedgerEntryInput,
   type SendPaymentRequestInput,
-  LedgerEntryType,
-  CurrentAccountTransactionType // Import the enum
+  LedgerEntryType
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
@@ -32,14 +29,13 @@ import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react'
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com";
 
-type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
-
 interface SalesLedgerProps {
   loggedInUser: any;
   isAdmin?: boolean;
+  targetUserId?: string | null; // This prop is passed when an admin selects a user
 }
 
-function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
+function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: SalesLedgerProps) {
   const [client] = useState(generateClient());
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
@@ -50,15 +46,17 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
+  // --- THIS IS THE FIX: The main useEffect hook now correctly depends on `targetUserId` ---
+  // It will now re-run and fetch new data whenever the admin selects a different user.
   useEffect(() => {
-    if (!loggedInUser) {
-        setLoading(false);
-        return;
-    }
+    // Determine whose data to fetch. For admins, use the targetUserId. For regular users, use their own ID.
+    const ownerId = isAdmin ? targetUserId : (loggedInUser?.username || loggedInUser?.attributes?.sub);
 
-    const ownerId = loggedInUser.username || loggedInUser.attributes?.sub;
+    // If we can't determine an owner, do nothing.
     if (!ownerId) {
         setLoading(false);
+        setEntries([]); // Clear out any old data
+        setCurrentAccountTransactions([]);
         return;
     }
 
@@ -66,6 +64,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     let subscription: any;
 
     const loadData = async () => {
+        if (!isMounted) return;
         setLoading(true);
         setError(null);
         try {
@@ -93,6 +92,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     };
 
     const setupSubscription = () => {
+        if (subscription) subscription.unsubscribe(); // Clean up old subscription first
         subscription = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: ownerId }
@@ -112,9 +112,10 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         isMounted = false;
         if (subscription) subscription.unsubscribe();
     };
-  }, [loggedInUser, client]);
+  }, [loggedInUser, isAdmin, targetUserId, client]); // Correctly depend on the targetUserId prop
 
-  // --- Calculations ---
+
+  // --- Calculations (No changes needed here) ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -145,7 +146,8 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handlers ---
+
+  // --- Mutation Handlers (No changes needed here) ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
     try {
@@ -161,7 +163,6 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }
   };
 
-  // --- THIS IS THE FIX ---
   const handleRequestDrawdown = async (amount: number) => {
     if (!loggedInUser) return;
     setDrawdownLoading(true);
@@ -178,20 +179,17 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
         setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
 
-        // Optimistic UI Update: Add the transaction to the local state immediately.
         const newOptimisticTransaction: CurrentAccountTransaction = {
             __typename: "CurrentAccountTransaction",
-            id: `local-${crypto.randomUUID()}`, // Use a temporary local ID
+            id: `local-${crypto.randomUUID()}`,
             owner: ownerId,
-            type: CurrentAccountTransactionType.PAYMENT_REQUEST,
+            type: "PAYMENT_REQUEST",
             amount: amount,
             description: "Payment Request (pending admin approval)",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            createdByAdmin: null,
         };
         
-        // Add the new transaction to the start of the list
         setCurrentAccountTransactions(prev => [newOptimisticTransaction, ...prev]);
 
     } catch (err) {
@@ -202,7 +200,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }
   };
 
-  // --- Render Logic ---
+  // --- Render Logic (No changes needed here) ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 
