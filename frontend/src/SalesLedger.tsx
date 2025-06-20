@@ -1,8 +1,5 @@
-// FILE: src/SalesLedger.tsx
-// ==========================================================
-// This version reinstates the payment request form logic.
-
-import React, { useState, useEffect, useMemo } from 'react';
+// src/SalesLedger.tsx
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { getCurrentUser } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
@@ -13,7 +10,7 @@ import {
 } from './graphql/operations/queries';
 import {
   createLedgerEntry,
-  sendPaymentRequestEmail // Import the mutation
+  sendPaymentRequestEmail
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 import {
@@ -21,7 +18,7 @@ import {
   type CurrentAccountTransaction,
   type AccountStatus,
   type CreateLedgerEntryInput,
-  type SendPaymentRequestInput, // Import the input type
+  type SendPaymentRequestInput,
   LedgerEntryType
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
@@ -29,10 +26,10 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-import { Loader, Alert, View, Text } from '@aws-amplify/ui-react';
+import { Loader, Alert, View, Text, Heading, Flex } from '@aws-amplify/ui-react'; // Added Heading and Flex
 
 const ADVANCE_RATE = 0.9;
-const ADMIN_EMAIL = "ross@aurumif.com";
+const ADMIN_EMAIL = "ross@aurumif.com"; // Using your admin email
 
 type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
@@ -48,8 +45,6 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
   const [accountStatus, setAccountStatus] = useState<AccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // --- NEW: State for the Payment Request Form ---
   const [drawdownLoading, setDrawdownLoading] = useState(false);
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
@@ -85,7 +80,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
                 const statusItem = (statusRes.data?.listAccountStatuses?.items || []).filter(Boolean)[0] as AccountStatus | null;
                 
                 setEntries(ledgerItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-                setCurrentAccountTransactions(transactionItems);
+                setCurrentAccountTransactions(transactionItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
                 setAccountStatus(statusItem);
             }
         } catch (err) {
@@ -165,7 +160,6 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }
   };
 
-  // --- NEW: Handler for the Payment Request Form ---
   const handleRequestDrawdown = async (amount: number) => {
     if (!loggedInUser) return;
     setDrawdownLoading(true);
@@ -204,18 +198,32 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         currentAccountBalance={currentAccountBalance}
       />
       
-      {/* --- THIS IS THE FIX: The form is now correctly wired up --- */}
-      <PaymentRequestForm
-        netAvailability={netAvailability}
-        onSubmitRequest={handleRequestDrawdown}
-        isLoading={drawdownLoading}
-        requestError={drawdownError}
-        requestSuccess={drawdownSuccess}
-        disabled={isAdmin}
-      />
+      {!isAdmin && (
+          <PaymentRequestForm
+            netAvailability={netAvailability}
+            onSubmitRequest={handleRequestDrawdown}
+            isLoading={drawdownLoading}
+            requestError={drawdownError}
+            requestSuccess={drawdownSuccess}
+          />
+      )}
       
-      <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
-      <LedgerHistory entries={entries} isLoading={loading} />
+      {!isAdmin && (
+          <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
+      )}
+
+      {/* --- THIS IS THE FIX: Two separate history sections --- */}
+      <Flex direction="column" gap="large" marginTop="large">
+        <View>
+            <Heading level={4}>Sales Ledger Transaction History</Heading>
+            <LedgerHistory entries={entries} isLoading={loading} />
+        </View>
+        <View>
+            <Heading level={4}>Current Account Transaction History</Heading>
+            {/* The LedgerHistory component is reusable for both data types */}
+            <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+        </View>
+      </Flex>
     </View>
   );
 }
