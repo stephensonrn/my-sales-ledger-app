@@ -163,7 +163,6 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
           authMode: 'userPool'
         });
       }
-      await refreshAllData();
     } catch (err) {
       console.error("Add entry failed:", err);
       setError("Failed to add ledger entry.");
