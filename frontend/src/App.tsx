@@ -1,3 +1,4 @@
+// src/App.tsx
 import React from 'react';
 import { Amplify } from 'aws-amplify';
 import {
@@ -81,6 +82,11 @@ function AuthenticatedContent() {
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
   const displayName = user?.signInDetails?.loginId || user?.username || 'User';
 
+  // --- THIS IS THE FIX ---
+  // We add a check to ensure the user object is fully loaded and has the sub ID.
+  // This prevents rendering SalesLedger with an incomplete user object.
+  const isUserReady = !!(user && (user.attributes?.sub || user.userId));
+
   return (
     <View padding="medium">
       <Flex
@@ -104,7 +110,8 @@ function AuthenticatedContent() {
       )}
 
       <main>
-        {isAdminLoading ? (
+        {/* The main content is now also gated by isUserReady */}
+        {!isUserReady || isAdminLoading ? (
           <Loader size="large" />
         ) : isAdmin ? (
           <AdminPage loggedInUser={user} />
