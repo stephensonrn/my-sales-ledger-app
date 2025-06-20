@@ -1,6 +1,8 @@
-// src/App.tsx
+// FILE: src/App.tsx
+// ==========================================================
+
 import React from 'react';
-import { Amplify } from 'aws-amplify'; // <-- 1. IMPORT Amplify
+import { Amplify } from 'aws-amplify';
 import {
   Authenticator,
   Button,
@@ -8,6 +10,7 @@ import {
   View,
   Flex,
   useAuthenticator,
+  Loader, // Import Loader
 } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 
@@ -18,33 +21,26 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
-
-// --- ✅ 2. ADD THIS ENTIRE CONFIGURATION BLOCK ---
-// This block connects your frontend code to your specific AWS backend resources.
+// --- This configuration remains the same ---
 Amplify.configure({
   Auth: {
     Cognito: {
-      // You must get these EXACT values from your CDK output or AWS Cognito Console
       userPoolId: 'eu-west-1_i09IJ2ySB',
       userPoolClientId: '28889re05prqhvu9kr7g5jtdid',
     }
   },
   API: {
     GraphQL: {
-      // This is the endpoint from your error message
       endpoint: 'https://bpadgzbx75dtxahgvbii2q7hjy.appsync-api.eu-west-1.amazonaws.com/graphql',
       region: 'eu-west-1',
-      // This tells the API client to use the logged-in user's token for every request
       defaultAuthMode: 'userPool'
     }
   }
 });
-// ----------------------------------------------------
 
-
+// --- This component remains the same ---
 const components = {
   Header() {
-    // ... (rest of your file is unchanged)
     return (
       <Heading level={3} padding="medium" textAlign="center">
         <img
@@ -62,18 +58,15 @@ const components = {
   },
 };
 
+// --- THIS IS THE MAIN CHANGE IN APP.TSX ---
+// This component now handles passing the user prop down correctly.
 function AuthenticatedContent() {
-  // ... (rest of your file is unchanged)
   const { user, signOut } = useAuthenticator((context) => [
     context.user,
     context.signOut,
   ]);
-
-  const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } =
-    useAdminAuth();
-
-  const displayName =
-    user?.signInDetails?.loginId || user?.username || 'User';
+  const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
+  const displayName = user?.signInDetails?.loginId || user?.username || 'User';
 
   return (
     <View padding="medium">
@@ -99,10 +92,11 @@ function AuthenticatedContent() {
 
       <main>
         {isAdminLoading ? (
-          <p>Verifying permissions...</p>
+          <Loader size="large" /> // Use a loader while checking admin status
         ) : isAdmin ? (
           <AdminPage loggedInUser={user} />
         ) : (
+          // We now pass the 'user' object from the authenticator directly as a prop
           <SalesLedger loggedInUser={user} />
         )}
       </main>
@@ -110,6 +104,7 @@ function AuthenticatedContent() {
   );
 }
 
+// --- The App component remains the same ---
 function App() {
   return (
     <Authenticator
