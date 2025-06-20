@@ -49,10 +49,9 @@ function PaymentRequestForm({
 
   return (
     <View as="form" onSubmit={handleSubmit} marginTop="medium" border="1px solid #ddd" padding="medium">
-      <Text fontSize="small" color="font.secondary" marginBottom="small">
-        Net Available for Request: £{formatCurrency(netAvailability)}
-      </Text>
-
+      
+      {/* --- THIS IS THE FIX: The redundant Text component has been removed --- */}
+      
       {validationError && (
         <Alert variation="error" marginBottom="small" isDismissible onDismiss={() => setValidationError(null)}>
           {validationError}
