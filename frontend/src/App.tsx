@@ -54,21 +54,23 @@ const components = {
   },
 };
 
+// --- THIS IS THE FIX: The 'order' properties have been updated ---
 const formFields = {
     signUp: {
-        // --- THIS IS THE FIX ---
-        // The key now exactly matches the Cognito attribute name: 'custom:company_name'
         'custom:company_name': {
             label: 'Company Name',
             placeholder: 'Enter your company name',
             isRequired: true,
-            order: 3 
+            order: 1 // Company Name is first
+        },
+        email: {
+            order: 2 // Email is second
         },
         password: {
-            order: 4
+            order: 3 // Password is third
         },
         confirm_password: {
-            order: 5
+            order: 4 // Confirm Password is last
         }
     }
 };
