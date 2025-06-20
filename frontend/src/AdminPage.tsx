@@ -24,15 +24,14 @@ import SalesLedger from './SalesLedger';
 const USERS_PER_PAGE = 10;
 
 interface AdminPageProps {
-  // The user object from useAuthenticator has a 'userId' which is the 'sub'
-  loggedInUser: User & { userId?: string };
+  loggedInUser: User & { userId?: string }; // The user object from useAuthenticator has a 'userId' which is the 'sub'
 }
 
 function AdminPage({ loggedInUser }: AdminPageProps) {
   const [client, setClient] = useState<any>(null);
   const [users, setUsers] = useState<CognitoUser[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
-  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(true); // Start as true
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
@@ -40,12 +39,14 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
     setClient(generateClient());
   }, []);
 
-  // --- THIS IS THE FIX (Part 1): The data fetching function is now wrapped in useCallback with correct dependencies ---
+  // --- THIS IS THE FIX (Part 1): The data fetching function is now wrapped in useCallback with the correct dependencies ---
   const fetchUsers = useCallback(async (token: string | null = null) => {
-    if (!client || isLoadingUsers) return;
+    if (!client) return; // Don't fetch if the client isn't ready
+    
     setIsLoadingUsers(true);
     setFetchError(null);
 
+    // If this is a fresh fetch (not loading more), clear the existing state
     if (!token) {
       setSelectedUser(null);
       setUsers([]);
@@ -68,13 +69,15 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
 
       // --- THIS IS THE FIX (Part 2): More robust filtering logic ---
       const loggedInUserId = loggedInUser.userId || loggedInUser.attributes?.sub;
+      
       const nonAdminUsers = fetchedUsers.filter(user => {
           // Rule 1: Always filter out the currently logged-in admin.
           if (user.sub === loggedInUserId) {
               return false;
           }
-          // Rule 2: Filter out any other user in an "admin" group (case-insensitive).
-          const isAdminGroupMember = user.groups?.some(group => group.toLowerCase() === 'admin');
+          // Rule 2: Filter out any other user in an "Admin" group (case-insensitive).
+          // This now safely handles cases where 'groups' is null or undefined.
+          const isAdminGroupMember = user.groups?.some(group => group?.toLowerCase() === 'admin');
           return !isAdminGroupMember;
       });
 
@@ -88,13 +91,17 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [client, isLoadingUsers, loggedInUser]); // Correct dependencies
+  }, [client, loggedInUser]); // Correct dependency array, removing the cause of the loop
 
+  // This effect now correctly calls the stable fetchUsers function.
   useEffect(() => {
     if (client) {
         fetchUsers();
     }
   }, [client, fetchUsers]);
+
+
+  // --- The rest of the component remains the same ---
 
   const handleUserSelect = (user: CognitoUser) => {
     setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
@@ -127,6 +134,11 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
               </tr>
             </thead>
             <tbody>
+              {isLoadingUsers && (
+                <tr key="loader-row">
+                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td>
+                </tr>
+              )}
               {!isLoadingUsers && users.length === 0 && !fetchError && (
                 <tr key="no-users-row">
                   <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Text>No non-admin users found.</Text></td>
@@ -152,11 +164,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                   </tr>
                 );
               })}
-              {isLoadingUsers && (
-                <tr key="loader-row">
-                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td>
-                </tr>
-              )}
             </tbody>
           </table>
         </View>
