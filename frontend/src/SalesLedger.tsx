@@ -1,8 +1,6 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
-import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -160,13 +158,15 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   };
 
   const handleRequestDrawdown = async (amount: number) => {
+    if (!loggedInUser) return;
     setDrawdownLoading(true);
     setDrawdownError(null);
     setDrawdownSuccess(null);
     try {
-        const currentUser = await getCurrentUser();
-        const ownerId = currentUser.attributes.sub;
-        const companyName = currentUser.attributes['custom:company_name'];
+        // --- THIS IS THE FIX ---
+        // We use the reliable `loggedInUser` prop instead of making a new API call.
+        const ownerId = loggedInUser.attributes?.sub || loggedInUser.userId;
+        const companyName = loggedInUser.attributes?.['custom:company_name'];
         
         const input: SendPaymentRequestInput = {
             amount,
