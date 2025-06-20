@@ -28,7 +28,7 @@ import { Loader, Alert, View, Text } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
 // Define a central email for drawdown requests
-const ADMIN_EMAIL = "admin@yourapp.com"; // <-- IMPORTANT: Change this to your admin's email
+const ADMIN_EMAIL = "ross@aurumif.com"; // <-- IMPORTANT: Change this to your admin's email
 
 type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
