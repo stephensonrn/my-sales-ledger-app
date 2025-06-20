@@ -1,6 +1,8 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
+// --- THIS IS THE FIX (Part 1): Import fetchUserAttributes ---
+import { fetchUserAttributes } from 'aws-amplify/auth';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -158,21 +160,21 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   };
 
   const handleRequestDrawdown = async (amount: number) => {
-    if (!loggedInUser) return;
     setDrawdownLoading(true);
     setDrawdownError(null);
     setDrawdownSuccess(null);
     try {
-        // --- THIS IS THE FIX ---
-        // We use the reliable `loggedInUser` prop instead of making a new API call.
-        const ownerId = loggedInUser.attributes?.sub || loggedInUser.userId;
-        const companyName = loggedInUser.attributes?.['custom:company_name'];
+        // --- THIS IS THE FIX (Part 2): Fetch attributes just-in-time ---
+        const userAttributes = await fetchUserAttributes();
+        const ownerId = userAttributes.sub;
+        const companyName = userAttributes['custom:company_name'];
+        const userEmail = userAttributes.email;
         
         const input: SendPaymentRequestInput = {
             amount,
             toEmail: ADMIN_EMAIL,
-            subject: `Payment Request from ${companyName || ownerId}`,
-            body: `User ${ownerId} from company '${companyName || 'N/A'}' has requested a drawdown payment of £${amount.toFixed(2)}.`,
+            subject: `Payment Request from ${companyName || userEmail}`,
+            body: `User (${userEmail}) from company '${companyName || 'N/A'}' has requested a drawdown payment of £${amount.toFixed(2)}.`,
             companyName: companyName,
         };
         await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
