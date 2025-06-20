@@ -120,18 +120,57 @@ function SalesLedger({ targetUserId, isAdmin = false, loggedInUser }: SalesLedge
 
   useEffect(() => {
     if (!client || !userIdForData) return;
+
     const sub = client.graphql({
       query: onCreateLedgerEntry,
       variables: { owner: userIdForData },
       authMode: 'userPool'
     }).subscribe({
       next: ({ data }) => {
-        if (data?.onCreateLedgerEntry) {
-          setEntries((prev) => [data.onCreateLedgerEntry, ...prev]);
+        const newTransaction = data?.onCreateLedgerEntry;
+
+        if (newTransaction) {
+          // 1. Update the transaction list (This part is already working)
+          setEntries((prev) => [newTransaction, ...prev]);
+
+          // 2. NEW: Update the account status and balance
+          setAccountStatus((prevStatus) => {
+            // If there's no previous status, we can't update it.
+            if (!prevStatus) return null;
+
+            let newBalance = prevStatus.totalUnapprovedInvoiceValue;
+            const amount = newTransaction.amount || 0;
+
+            // This logic determines how the balance changes.
+            // Please verify this matches your business rules.
+            switch (newTransaction.type) {
+              case 'INVOICE':
+              case 'INCREASE_ADJUSTMENT':
+                newBalance += amount;
+                break;
+              
+              case 'CREDIT_NOTE':
+              case 'DECREASE_ADJUSTMENT':
+              case 'CASH_RECEIPT': // Assuming cash receipt reduces the outstanding balance
+                newBalance -= amount;
+                break;
+
+              default:
+                // Do nothing for transaction types that don't affect the balance
+                break;
+            }
+
+            // Return a new accountStatus object with the updated balance
+            return {
+              ...prevStatus,
+              totalUnapprovedInvoiceValue: newBalance,
+            };
+          });
         }
       },
       error: (err) => console.error("Subscription error:", err)
     });
+
     return () => sub.unsubscribe();
   }, [client, userIdForData]);
 
