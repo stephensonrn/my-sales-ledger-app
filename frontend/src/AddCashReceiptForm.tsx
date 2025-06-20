@@ -7,17 +7,15 @@ import {
   Flex,
   Alert,
   View,
-  Heading,
 } from '@aws-amplify/ui-react';
 
-// Correct imports from your generated files
 import {
-  adminAddCashReceipt, // GraphQL mutation document
+  adminAddCashReceipt,
 } from './graphql/operations/mutations';
 
 import type {
   AdminAddCashReceiptMutation,
-  AdminAddCashReceiptInput,
+  AdminAddCashReceiptMutationVariables, // Import the variables type
   CurrentAccountTransaction,
 } from './graphql/API';
 
@@ -25,6 +23,8 @@ const client = generateClient();
 
 interface AddCashReceiptFormProps {
   selectedTargetSub: string;
+  // This prop from the parent isn't used here, so we can remove it for clarity
+  // loggedInUser: any; 
   onCashReceiptAdded?: (newTransaction: CurrentAccountTransaction) => void;
 }
 
@@ -40,14 +40,12 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
 
     if (!selectedTargetSub) {
       setError('No target user selected. Please select a user first.');
-      setSuccess(null);
       return;
     }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       setError('Please enter a valid positive amount for the cash receipt.');
-      setSuccess(null);
       return;
     }
 
@@ -55,47 +53,42 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
     setError(null);
     setSuccess(null);
 
-    const mutationInput: AdminAddCashReceiptInput = {
+    // This object now directly represents the variables for the mutation.
+    const mutationVariables: AdminAddCashReceiptMutationVariables = {
       targetOwnerId: selectedTargetSub,
       amount: numericAmount,
-      description: description || undefined,
+      description: description || null, // Send null if description is empty
     };
 
     try {
-      console.log('AddCashReceiptForm: Calling AdminAddCashReceipt with input:', mutationInput);
+      console.log('AddCashReceiptForm: Calling AdminAddCashReceipt with variables:', mutationVariables);
+      
+      // --- THIS IS THE FIX ---
+      // The variables are now passed directly, not nested inside an 'input' object.
       const response = await client.graphql<AdminAddCashReceiptMutation>({
         query: adminAddCashReceipt,
-        variables: { input: mutationInput },
-        authMode: 'userPool',
+        variables: mutationVariables,
       });
 
       console.log('AddCashReceiptForm: Response from mutation:', response);
 
-      if (response.errors && response.errors.length > 0) {
-        throw response.errors;
-      }
+      if (response.errors) throw response.errors;
 
       const createdTransaction = response.data?.adminAddCashReceipt;
 
       if (createdTransaction) {
-        setSuccess(`Successfully added cash receipt (ID: ${createdTransaction.id}) for user ${selectedTargetSub.substring(0, 8)}...`);
+        setSuccess(`Successfully added cash receipt for user.`);
         setAmount('');
         setDescription('');
         if (onCashReceiptAdded) {
           onCashReceiptAdded(createdTransaction as CurrentAccountTransaction);
         }
       } else {
-        console.error('AddCashReceiptForm: Submission successful, but server did not return transaction data.', response.data);
-        setError('Submission processed, but could not confirm cash receipt details from the server.');
+        throw new Error('Submission successful, but server did not return transaction data.');
       }
     } catch (err: any) {
       console.error('AddCashReceiptForm: Error adding cash receipt:', err);
-      let errorMessages = 'An unknown error occurred.';
-      if (Array.isArray(err)) {
-        errorMessages = err.map((e: any) => e.message || 'GraphQL error').join(', ');
-      } else if (err.message) {
-        errorMessages = err.message;
-      }
+      const errorMessages = Array.isArray(err) ? err.map((e: any) => e.message).join(', ') : (err.message || 'An unknown error occurred.');
       setError(`Failed to add cash receipt: ${errorMessages}`);
     } finally {
       setIsLoading(false);
@@ -133,12 +126,12 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
         </Button>
       </Flex>
       {success && (
-        <Alert variation="success" isDismissible={true} onDismiss={() => setSuccess(null)} marginTop="small">
+        <Alert variation="success" isDismissible onDismiss={() => setSuccess(null)} marginTop="small">
           {success}
         </Alert>
       )}
       {error && (
-        <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)} marginTop="small">
+        <Alert variation="error" isDismissible onDismiss={() => setError(null)} marginTop="small">
           {error}
         </Alert>
       )}
