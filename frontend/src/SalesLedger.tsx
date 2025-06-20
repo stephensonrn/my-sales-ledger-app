@@ -1,7 +1,6 @@
-// ==========================================================
 // FILE: src/SalesLedger.tsx
 // ==========================================================
-// This file is corrected to fetch the AccountStatus and use it in calculations.
+// This version reinstates the payment request form logic.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
@@ -10,17 +9,19 @@ import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
-  listAccountStatuses // Import the query
+  listAccountStatuses
 } from './graphql/operations/queries';
 import {
   createLedgerEntry,
+  sendPaymentRequestEmail // Import the mutation
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 import {
   type LedgerEntry,
   type CurrentAccountTransaction,
-  type AccountStatus, // Import the type
+  type AccountStatus,
   type CreateLedgerEntryInput,
+  type SendPaymentRequestInput, // Import the input type
   LedgerEntryType
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
@@ -31,6 +32,7 @@ import PaymentRequestForm from './PaymentRequestForm';
 import { Loader, Alert, View, Text } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
+const ADMIN_EMAIL = "your-admin-email@example.com"; // <-- IMPORTANT: Set your admin's email
 
 type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
@@ -43,9 +45,14 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
   const [client] = useState(generateClient());
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
-  const [accountStatus, setAccountStatus] = useState<AccountStatus | null>(null); // State for the status record
+  const [accountStatus, setAccountStatus] = useState<AccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // --- NEW: State for the Payment Request Form ---
+  const [drawdownLoading, setDrawdownLoading] = useState(false);
+  const [drawdownError, setDrawdownError] = useState<string | null>(null);
+  const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loggedInUser) {
@@ -66,7 +73,6 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         setLoading(true);
         setError(null);
         try {
-            // Fetch all three data types in parallel
             const [ledgerRes, transactionsRes, statusRes] = await Promise.all([
                 client.graphql({ query: listLedgerEntries, variables: { filter: { owner: { eq: ownerId } } } }),
                 client.graphql({ query: listCurrentAccountTransactions, variables: { filter: { owner: { eq: ownerId } } } }),
@@ -112,9 +118,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     };
   }, [loggedInUser, client]);
 
-  // --- CORRECTED Business Logic Calculations ---
-  
-  // 1. This is the real-time total calculated from all transactions.
+  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -128,13 +132,9 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }, 0);
   }, [entries]);
 
-  // 2. This is the manual value set by the admin.
   const unapprovedInvoiceTotal = accountStatus?.totalUnapprovedInvoiceValue || 0;
-  
-  // 3. The "approved" balance is the difference.
   const approvedSalesLedger = salesLedgerBalance - unapprovedInvoiceTotal;
   
-  // 4. Current account balance calculation remains the same.
   const currentAccountBalance = useMemo(() => {
     return currentAccountTransactions.reduce((acc, tx) => {
       const amount = tx.amount || 0;
@@ -146,16 +146,12 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }, 0);
   }, [currentAccountTransactions]);
   
-  // 5. Availability calculations now use the correct "approved" balance.
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handler (No changes) ---
+  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
-    if (!loggedInUser) {
-        setError("Cannot add entry: User is not authenticated.");
-        return;
-    }
+    if (!loggedInUser) return;
     try {
         const input: CreateLedgerEntryInput = {
           amount: newEntry.amount || 0,
@@ -164,35 +160,57 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         };
         await client.graphql({ query: createLedgerEntry, variables: { input } });
     } catch (err) {
-      console.error("Add entry failed:", err);
       setError("Failed to add ledger entry.");
+      console.error(err);
     }
   };
 
+  // --- NEW: Handler for the Payment Request Form ---
+  const handleRequestDrawdown = async (amount: number) => {
+    if (!loggedInUser) return;
+    setDrawdownLoading(true);
+    setDrawdownError(null);
+    setDrawdownSuccess(null);
+    try {
+        const ownerId = loggedInUser.username || loggedInUser.attributes?.sub;
+        const input: SendPaymentRequestInput = {
+            amount,
+            toEmail: ADMIN_EMAIL,
+            subject: `Payment Request from User: ${ownerId}`,
+            body: `User ${ownerId} has requested a drawdown payment of £${amount.toFixed(2)}.`,
+        };
+        await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
+        setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
+    } catch (err) {
+        setDrawdownError("Failed to send payment request. Please try again.");
+        console.error("Payment request failed:", err);
+    } finally {
+        setDrawdownLoading(false);
+    }
+  };
+
+  // --- Render Logic ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 
   return (
     <View>
-      {/* This component now shows the correct, real-time total balance */}
       <CurrentBalance balance={salesLedgerBalance} />
-      
-      {/* This component now uses the corrected availability numbers */}
       <AvailabilityDisplay
         currentSalesLedgerBalance={salesLedgerBalance}
-        totalUnapprovedInvoiceValue={unapprovedInvoiceTotal} // Pass the manual value
+        totalUnapprovedInvoiceValue={unapprovedInvoiceTotal}
         grossAvailability={grossAvailability}
         netAvailability={netAvailability}
         currentAccountBalance={currentAccountBalance}
       />
       
-      {/* The rest of the forms remain the same */}
+      {/* --- THIS IS THE FIX: The form is now correctly wired up --- */}
       <PaymentRequestForm
         netAvailability={netAvailability}
-        onSubmitRequest={async () => {}} // Placeholder for drawdown logic
-        isLoading={false}
-        requestError={null}
-        requestSuccess={null}
+        onSubmitRequest={handleRequestDrawdown}
+        isLoading={drawdownLoading}
+        requestError={drawdownError}
+        requestSuccess={drawdownSuccess}
         disabled={isAdmin}
       />
       
