@@ -1,69 +1,103 @@
-// ==========================================================
-// FILE: src/SalesLedger.tsx
-// ==========================================================
-
+// src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
+import { getCurrentUser } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions
 } from './graphql/operations/queries';
 import {
   createLedgerEntry,
-  adminCreateLedgerEntry,
+  sendPaymentRequestEmail // Import the mutation for drawdowns
 } from './graphql/operations/mutations';
 import { onCreateLedgerEntry } from './graphql/operations/subscriptions';
 import {
   type LedgerEntry,
   type CurrentAccountTransaction,
   type CreateLedgerEntryInput,
-  type AdminCreateLedgerEntryInput,
+  type SendPaymentRequestInput, // Import the input type
   LedgerEntryType
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
+import PaymentRequestForm from './PaymentRequestForm'; // Import the form component
 import { Loader, Alert, View, Text } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
+// Define a central email for drawdown requests
+const ADMIN_EMAIL = "admin@yourapp.com"; // <-- IMPORTANT: Change this to your admin's email
+
+type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
 interface SalesLedgerProps {
-  // This component now receives the full user object.
-  loggedInUser: any; 
-  isAdmin?: boolean; // isAdmin is now managed by the parent
+  targetUserId?: string | null;
+  isAdmin?: boolean;
 }
 
-function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
+function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   const [client] = useState(generateClient());
+  
+  // Data State
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for the Payment Request Form
+  const [drawdownLoading, setDrawdownLoading] = useState(false);
+  const [drawdownError, setDrawdownError] = useState<string | null>(null);
+  const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
+  
+  // Auth State
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('CHECKING');
+  const [ownerId, setOwnerId] = useState<string | null>(null);
 
-  // This is the main effect that loads data and sets up subscriptions.
-  // It relies on the loggedInUser prop, which is guaranteed to be present.
+  // --- Effect 1: Manages Authentication State ---
   useEffect(() => {
-    // If there's no user object, do nothing.
-    if (!loggedInUser) {
-        setLoading(false);
-        return;
-    }
+    const checkCurrentUser = async () => {
+      try {
+        const user = await getCurrentUser();
+        const currentOwnerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
+        if (currentOwnerId) {
+            setOwnerId(currentOwnerId);
+            setAuthStatus('AUTHENTICATED');
+        } else {
+            setAuthStatus('GUEST');
+        }
+      } catch (err) {
+        setAuthStatus('GUEST');
+      }
+    };
 
-    const ownerId = loggedInUser.username || loggedInUser.attributes?.sub;
-    if (!ownerId) {
-        setLoading(false);
-        return;
-    }
+    const hubListener = (hubData: any) => {
+      const { event } = hubData.payload;
+      if (event === 'signedIn' || event === 'autoSignIn') {
+        checkCurrentUser();
+      } else if (event === 'signedOut') {
+        setAuthStatus('GUEST');
+        setOwnerId(null);
+        setEntries([]);
+        setCurrentAccountTransactions([]);
+      }
+    };
+    
+    const unsubscribeHub = Hub.listen('auth', hubListener);
+    checkCurrentUser();
 
-    let isMounted = true;
+    return () => unsubscribeHub();
+  }, [isAdmin, targetUserId]);
+
+  // --- Effect 2: Reacts to Authentication State to Load Data ---
+  useEffect(() => {
     let subscription: any;
-
+    
     const loadData = async () => {
-        setLoading(true);
+        if (authStatus !== 'AUTHENTICATED' || !ownerId) return;
+        
         setError(null);
         try {
-            // Fetch all data...
             let allLedgerEntries: LedgerEntry[] = [];
             let nextToken: string | null | undefined = null;
             do {
@@ -81,41 +115,33 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
                 variables: { filter: { owner: { eq: ownerId } } }
             });
             const transactionItems = transactionsRes?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) || [];
+            
+            setEntries(allLedgerEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+            setCurrentAccountTransactions(transactionItems);
 
-            if (isMounted) {
-                setEntries(allLedgerEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-                setCurrentAccountTransactions(transactionItems);
-            }
+            subscription = client.graphql({
+                query: onCreateLedgerEntry,
+                variables: { owner: ownerId }
+            }).subscribe({
+                next: ({ data }) => {
+                    if (data?.onCreateLedgerEntry) {
+                        setEntries((prev) => [data.onCreateLedgerEntry, ...prev.filter(e => e.id !== data.onCreateLedgerEntry.id)]);
+                    }
+                }
+            });
+
         } catch (err) {
-            console.error("Error loading data:", err);
-            if (isMounted) setError("Failed to load ledger data.");
-        } finally {
-            if (isMounted) setLoading(false);
+            setError("Failed to load ledger data.");
+            console.error("Error in loadData effect:", err);
         }
     };
 
-    const setupSubscription = () => {
-        subscription = client.graphql({
-            query: onCreateLedgerEntry,
-            variables: { owner: ownerId }
-        }).subscribe({
-            next: ({ data }) => {
-                if (isMounted && data?.onCreateLedgerEntry) {
-                    setEntries((prev) => [data.onCreateLedgerEntry, ...prev.filter(e => e.id !== data.onCreateLedgerEntry.id)]);
-                }
-            }
-        });
-    };
-
     loadData();
-    setupSubscription();
 
     return () => {
-        isMounted = false;
         if (subscription) subscription.unsubscribe();
     };
-  }, [loggedInUser, client]); // The effect now depends on the stable loggedInUser prop.
-
+  }, [authStatus, ownerId, client]);
 
   // --- Business Logic Calculations ---
   const salesLedgerBalance = useMemo(() => {
@@ -146,9 +172,9 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handler ---
+  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
-    if (!loggedInUser) {
+    if (!ownerId) {
         setError("Cannot add entry: User is not authenticated.");
         return;
     }
@@ -165,9 +191,40 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }
   };
 
+  // --- NEW: Handler for the Payment Request Form ---
+  const handleRequestDrawdown = async (amount: number) => {
+    setDrawdownLoading(true);
+    setDrawdownError(null);
+    setDrawdownSuccess(null);
+    try {
+        const input: SendPaymentRequestInput = {
+            amount,
+            toEmail: ADMIN_EMAIL,
+            subject: `Payment Request from User: ${ownerId}`,
+            body: `User ${ownerId} has requested a drawdown payment of £${amount.toFixed(2)}.`,
+        };
+        await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
+        setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
+    } catch (err) {
+        console.error("Payment request failed:", err);
+        setDrawdownError("Failed to send payment request. Please try again.");
+    } finally {
+        setDrawdownLoading(false);
+    }
+  };
+
   // --- Render Logic ---
-  if (loading) return <Loader size="large" />;
-  if (error) return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
+  if (authStatus === 'CHECKING') {
+    return <Loader size="large" />;
+  }
+  
+  if (error) {
+    return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
+  }
+  
+  if (authStatus !== 'AUTHENTICATED') {
+    return <Text>Please sign in to view your sales ledger.</Text>;
+  }
 
   return (
     <View>
@@ -179,8 +236,19 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         netAvailability={netAvailability}
         currentAccountBalance={currentAccountBalance}
       />
+      
+      {/* --- REINSTATED PAYMENT REQUEST FORM --- */}
+      <PaymentRequestForm
+        netAvailability={netAvailability}
+        onSubmitRequest={handleRequestDrawdown}
+        isLoading={drawdownLoading}
+        requestError={drawdownError}
+        requestSuccess={drawdownSuccess}
+        disabled={isAdmin} // Disable for admins if they can't request for themselves
+      />
+      
       <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
-      <LedgerHistory entries={entries} isLoading={loading} />
+      <LedgerHistory entries={entries} isLoading={false} />
     </View>
   );
 }
