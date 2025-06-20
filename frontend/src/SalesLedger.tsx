@@ -172,7 +172,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
   }, [currentAccountTransactions]);
   
   const approvedSalesLedger = salesLedgerBalance;
-  const grossAvailability = approvedSalesLedger * ADVANCE_rate;
+  // THIS IS THE FIX: Changed ADVANCE_rate to ADVANCE_RATE
+  const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
   // --- Mutation Handler (Simplified) ---
@@ -187,6 +188,8 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
           type: newEntry.type,
           description: newEntry.description || ''
         };
+        // This assumes non-admins are adding entries for themselves.
+        // The owner is automatically set by the backend resolver.
         await client.graphql({ query: createLedgerEntry, variables: { input } });
     } catch (err) {
       console.error("Add entry failed:", err);
