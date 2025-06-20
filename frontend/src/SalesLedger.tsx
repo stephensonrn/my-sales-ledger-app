@@ -1,5 +1,5 @@
 // src/SalesLedger.tsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { getCurrentUser } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
@@ -33,31 +33,33 @@ interface SalesLedgerProps {
 }
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
+  // Create the API client once.
   const [client] = useState(generateClient());
+
+  // State for data, loading, and errors
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // This is the main hook that controls all data loading and real-time updates.
   useEffect(() => {
-    let subscription: any;
+    let subscription: any; // To hold the GraphQL subscription object for cleanup
 
+    // This function contains the logic to fetch all necessary data from the backend.
     const loadDataAndSubscribe = async () => {
       setLoading(true);
       setError(null);
       try {
-        console.log("Attempting to load data...");
         const user = await getCurrentUser();
         const ownerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
 
         if (!ownerId) {
-          console.log("No ownerId found, stopping.");
           setLoading(false);
-          return;
+          return; // Can't proceed without an owner ID
         }
-
-        console.log(`Fetching data for owner: ${ownerId}`);
         
+        // Fetch all ledger entries with pagination
         let allLedgerEntries: LedgerEntry[] = [];
         let nextToken: string | null | undefined = null;
         do {
@@ -65,26 +67,28 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             query: listLedgerEntries,
             variables: { filter: { owner: { eq: ownerId } }, limit: 100, nextToken }
           });
-          const items = ledgerRes?.data?.listLedgerEntries?.items?.filter(Boolean) || [];
-          allLedgerEntries.push(...items);
+          const ledgerItems = ledgerRes?.data?.listLedgerEntries?.items?.filter(Boolean) || [];
+          allLedgerEntries.push(...ledgerItems);
           nextToken = ledgerRes?.data?.listLedgerEntries?.nextToken;
         } while (nextToken);
         
+        // Fetch all current account transactions
         const transactionsRes: any = await client.graphql({
           query: listCurrentAccountTransactions,
           variables: { filter: { owner: { eq: ownerId } } }
         });
         const transactionItems = transactionsRes?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) || [];
 
-        console.log(`Fetched ${allLedgerEntries.length} ledger entries.`);
-        setEntries(allLedgerEntries);
+        // Set state with the fetched data
+        setEntries(allLedgerEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         setCurrentAccountTransactions(transactionItems);
         
-        // Cleanup existing subscription before creating a new one
+        // Clean up any existing subscription before creating a new one
         if (subscription) {
             subscription.unsubscribe();
         }
         
+        // Set up the real-time subscription for new ledger entries
         subscription = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: ownerId }
@@ -92,6 +96,7 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
             next: ({ data }) => {
                 const newTransaction = data?.onCreateLedgerEntry;
                 if (newTransaction) {
+                    // Just add the new entry; useMemo will handle recalculations.
                     setEntries((prev) => [newTransaction, ...prev]);
                 }
             },
@@ -100,21 +105,19 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
 
       } catch (err) {
         console.error("Error during data loading:", err);
-        setError("Could not load user data. Please try refreshing.");
+        setError("Could not load sales ledger data. Please refresh the page.");
       } finally {
         setLoading(false);
       }
     };
 
-    // This listener reacts to authentication events
+    // The Hub listener reacts to authentication events to reliably trigger data loads.
     const hubListener = (data: any) => {
         switch (data.payload.event) {
             case 'signedIn':
-                console.log('Hub event: signedIn');
                 loadDataAndSubscribe();
                 break;
             case 'signedOut':
-                console.log('Hub event: signedOut');
                 setEntries([]);
                 setCurrentAccountTransactions([]);
                 setError(null);
@@ -122,22 +125,23 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         }
     };
 
-    Hub.listen('auth', hubListener);
+    // Start listening to the Hub
+    const unsubscribeFromHub = Hub.listen('auth', hubListener);
 
-    // Initial load when the component mounts
+    // Perform the initial data load when the component mounts
     loadDataAndSubscribe();
 
-    // Cleanup function
+    // The cleanup function runs when the component unmounts
     return () => {
-        Hub.remove('auth', hubListener);
+        unsubscribeFromHub(); // Correctly unsubscribe from the Hub
         if (subscription) {
-            subscription.unsubscribe();
+            subscription.unsubscribe(); // Unsubscribe from GraphQL subscription
         }
     };
   }, [client, isAdmin, targetUserId]); // Effect dependencies
 
-  // ... All the calculation and mutation handler code remains the same ...
-  // --- Calculations ---
+  // --- Business Logic Calculations using useMemo for efficiency ---
+
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -169,30 +173,48 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }, 0);
   }, [currentAccountTransactions]);
   
+  // TODO: Update this once we know how to identify "Unapproved Invoices"
   const approvedSalesLedger = salesLedgerBalance;
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handler ---
-  const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
+  // --- Mutation Handler to Add New Entries ---
+
+  const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     try {
       const user = await getCurrentUser();
-      const ownerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
-      if(!ownerId) throw new Error("Could not determine owner for transaction.");
-
-      const input: CreateLedgerEntryInput = {
-        amount: newEntry.amount, type: newEntry.type, description: newEntry.description
-      };
-      await client.graphql({ query: createLedgerEntry, variables: { input } });
+      const ownerId = isAdmin && targetUserId ? targetUserId : (user.username || user.attributes?.sub);
       
+      if (!ownerId) {
+        throw new Error("Could not determine owner for the transaction.");
+      }
+
+      if (isAdmin) {
+        const input: AdminCreateLedgerEntryInput = {
+          targetUserId: ownerId,
+          amount: newEntry.amount || 0,
+          type: newEntry.type,
+          description: newEntry.description || ''
+        };
+        await client.graphql({ query: adminCreateLedgerEntry, variables: { input } });
+      } else {
+        const input: CreateLedgerEntryInput = {
+          amount: newEntry.amount || 0,
+          type: newEntry.type,
+          description: newEntry.description || ''
+        };
+        await client.graphql({ query: createLedgerEntry, variables: { input } });
+      }
     } catch (err) {
       console.error("Add entry failed:", err);
       setError("Failed to add ledger entry.");
     }
   };
 
+  // --- Render Logic ---
+
   if (loading) return <Loader />;
-  if (error) return <Alert variation="error">{error}</Alert>;
+  if (error) return <Alert variation="error" isDismissible={true} onDismiss={() => setError(null)}>{error}</Alert>;
 
   return (
     <View>
