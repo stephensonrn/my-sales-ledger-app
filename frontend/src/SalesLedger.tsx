@@ -1,10 +1,5 @@
-// FILE: src/SalesLedger.tsx (Corrected to use SUB for subscriptions)
-// ==========================================================
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser } from 'aws-amplify/auth';
-import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -34,8 +29,6 @@ import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react'
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com";
 
-type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
-
 interface SalesLedgerProps {
   loggedInUser: any;
   isAdmin?: boolean;
@@ -54,7 +47,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    // --- THIS IS THE FIX: Determine the owner's SUB ID ---
     const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
     if (!ownerSub) {
@@ -94,7 +86,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
 
     const setupSubscription = () => {
         if (subscription) subscription.unsubscribe();
-        // --- THIS IS THE FIX: Subscribe using the SUB ID ---
         subscription = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: ownerSub }
@@ -148,6 +139,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
+
   // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
@@ -164,18 +156,22 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     }
   };
 
+  // --- THIS IS THE FIX (Part 2): Pass the company name in the mutation input ---
   const handleRequestDrawdown = async (amount: number) => {
     if (!loggedInUser) return;
     setDrawdownLoading(true);
     setDrawdownError(null);
     setDrawdownSuccess(null);
     try {
-        const ownerId = loggedInUser.username || loggedInUser.attributes?.sub;
+        const ownerId = loggedInUser.attributes?.sub || loggedInUser.userId;
+        const companyName = loggedInUser.attributes?.['custom:company_name'];
+        
         const input: SendPaymentRequestInput = {
             amount,
             toEmail: ADMIN_EMAIL,
-            subject: `Payment Request from User: ${ownerId}`,
-            body: `User ${ownerId} has requested a drawdown payment of £${amount.toFixed(2)}.`,
+            subject: `Payment Request from ${companyName || ownerId}`, // Use company name in subject
+            body: `User ${ownerId} from company ${companyName || 'N/A'} has requested a drawdown payment of £${amount.toFixed(2)}.`,
+            companyName: companyName, // Pass the company name
         };
         await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
         setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
