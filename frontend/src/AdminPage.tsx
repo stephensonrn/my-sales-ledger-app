@@ -1,5 +1,5 @@
 // src/AdminPage.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { type User } from 'aws-amplify/auth';
 import {
@@ -24,7 +24,8 @@ import SalesLedger from './SalesLedger';
 const USERS_PER_PAGE = 10;
 
 interface AdminPageProps {
-  loggedInUser: User;
+  // The user object from useAuthenticator has a 'userId' which is the 'sub'
+  loggedInUser: User & { userId?: string };
 }
 
 function AdminPage({ loggedInUser }: AdminPageProps) {
@@ -36,22 +37,12 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
   useEffect(() => {
-    const setupClient = async () => {
-      const { getCurrentUser } = await import('aws-amplify/auth');
-      try {
-        const user = await getCurrentUser();
-        if (user) {
-          setClient(generateClient());
-        }
-      } catch (err) {
-        console.error("AdminPage: Failed to get current user session:", err);
-      }
-    };
-    setupClient();
+    setClient(generateClient());
   }, []);
 
-  const fetchUsers = async (token: string | null = null) => {
-    if (!client || (isLoadingUsers && !token)) return;
+  // --- THIS IS THE FIX (Part 1): The data fetching function is now wrapped in useCallback with correct dependencies ---
+  const fetchUsers = useCallback(async (token: string | null = null) => {
+    if (!client || isLoadingUsers) return;
     setIsLoadingUsers(true);
     setFetchError(null);
 
@@ -69,38 +60,41 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
         },
       });
 
-      if (response.errors) {
-        throw response.errors;
-      }
+      if (response.errors) throw response.errors;
 
       const resultData = response.data?.adminListUsers;
       const fetchedUsers = resultData?.users?.filter(Boolean) as CognitoUser[] || [];
       const paginationToken = resultData?.nextToken ?? null;
 
-      // --- THIS IS THE FIX ---
-      // Filter out any user who is in the "Admin" group.
-      const nonAdminUsers = fetchedUsers.filter(user => !user.groups?.includes('Admin'));
+      // --- THIS IS THE FIX (Part 2): More robust filtering logic ---
+      const loggedInUserId = loggedInUser.userId || loggedInUser.attributes?.sub;
+      const nonAdminUsers = fetchedUsers.filter(user => {
+          // Rule 1: Always filter out the currently logged-in admin.
+          if (user.sub === loggedInUserId) {
+              return false;
+          }
+          // Rule 2: Filter out any other user in an "admin" group (case-insensitive).
+          const isAdminGroupMember = user.groups?.some(group => group.toLowerCase() === 'admin');
+          return !isAdminGroupMember;
+      });
 
       setUsers(prevUsers => token ? [...prevUsers, ...nonAdminUsers] : nonAdminUsers);
       setNextToken(paginationToken);
 
     } catch (err: any) {
       console.error("AdminPage: Error listing users:", err);
-      let errorMessages = 'Unknown error listing users';
-      if (err.errors && Array.isArray(err.errors)) {
-        errorMessages = err.errors.map((e: any) => e.message).join(', ');
-      } else if (err.message) {
-        errorMessages = err.message;
-      }
+      const errorMessages = err.errors?.map((e: any) => e.message).join(', ') || err.message || 'Unknown error';
       setFetchError(errorMessages);
     } finally {
       setIsLoadingUsers(false);
     }
-  };
+  }, [client, isLoadingUsers, loggedInUser]); // Correct dependencies
 
   useEffect(() => {
-    if (client) fetchUsers();
-  }, [client]);
+    if (client) {
+        fetchUsers();
+    }
+  }, [client, fetchUsers]);
 
   const handleUserSelect = (user: CognitoUser) => {
     setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
@@ -158,7 +152,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                   </tr>
                 );
               })}
-              {isLoadingUsers && users.length > 0 && (
+              {isLoadingUsers && (
                 <tr key="loader-row">
                   <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td>
                 </tr>
@@ -169,7 +163,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
         {nextToken && !isLoadingUsers && (
           <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
-        {isLoadingUsers && users.length === 0 && <Loader marginTop="small" />}
       </Card>
 
       <View marginTop="large">
