@@ -1,6 +1,10 @@
-// src/SalesLedger.tsx
+// FILE: src/SalesLedger.tsx (Corrected to use SUB for subscriptions)
+// ==========================================================
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
+import { getCurrentUser } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -17,7 +21,8 @@ import {
   type AccountStatus,
   type CreateLedgerEntryInput,
   type SendPaymentRequestInput,
-  LedgerEntryType
+  LedgerEntryType,
+  CurrentAccountTransactionType
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
@@ -29,10 +34,12 @@ import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react'
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com";
 
+type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
+
 interface SalesLedgerProps {
   loggedInUser: any;
   isAdmin?: boolean;
-  targetUserId?: string | null; // This prop is passed when an admin selects a user
+  targetUserId?: string | null;
 }
 
 function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: SalesLedgerProps) {
@@ -46,32 +53,26 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
-  // --- THIS IS THE FIX: The main useEffect hook now correctly depends on `targetUserId` ---
-  // It will now re-run and fetch new data whenever the admin selects a different user.
   useEffect(() => {
-    // Determine whose data to fetch. For admins, use the targetUserId. For regular users, use their own ID.
-    const ownerId = isAdmin ? targetUserId : (loggedInUser?.username || loggedInUser?.attributes?.sub);
+    // --- THIS IS THE FIX: Determine the owner's SUB ID ---
+    const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
-    // If we can't determine an owner, do nothing.
-    if (!ownerId) {
-        setLoading(false);
-        setEntries([]); // Clear out any old data
-        setCurrentAccountTransactions([]);
-        return;
+    if (!ownerSub) {
+      setLoading(false);
+      return;
     }
 
     let isMounted = true;
     let subscription: any;
 
     const loadData = async () => {
-        if (!isMounted) return;
         setLoading(true);
         setError(null);
         try {
             const [ledgerRes, transactionsRes, statusRes] = await Promise.all([
-                client.graphql({ query: listLedgerEntries, variables: { filter: { owner: { eq: ownerId } } } }),
-                client.graphql({ query: listCurrentAccountTransactions, variables: { filter: { owner: { eq: ownerId } } } }),
-                client.graphql({ query: listAccountStatuses, variables: { filter: { owner: { eq: ownerId } }, limit: 1 } })
+                client.graphql({ query: listLedgerEntries, variables: { filter: { owner: { eq: ownerSub } } } }),
+                client.graphql({ query: listCurrentAccountTransactions, variables: { filter: { owner: { eq: ownerSub } } } }),
+                client.graphql({ query: listAccountStatuses, variables: { filter: { owner: { eq: ownerSub } }, limit: 1 } })
             ]);
 
             if (isMounted) {
@@ -92,10 +93,11 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     };
 
     const setupSubscription = () => {
-        if (subscription) subscription.unsubscribe(); // Clean up old subscription first
+        if (subscription) subscription.unsubscribe();
+        // --- THIS IS THE FIX: Subscribe using the SUB ID ---
         subscription = client.graphql({
             query: onCreateLedgerEntry,
-            variables: { owner: ownerId }
+            variables: { owner: ownerSub }
         }).subscribe({
             next: ({ data }) => {
                 if (isMounted && data?.onCreateLedgerEntry) {
@@ -112,10 +114,10 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
         isMounted = false;
         if (subscription) subscription.unsubscribe();
     };
-  }, [loggedInUser, isAdmin, targetUserId, client]); // Correctly depend on the targetUserId prop
+  }, [loggedInUser, isAdmin, targetUserId, client]);
 
 
-  // --- Calculations (No changes needed here) ---
+  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -146,8 +148,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-
-  // --- Mutation Handlers (No changes needed here) ---
+  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
     try {
@@ -183,7 +184,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
             __typename: "CurrentAccountTransaction",
             id: `local-${crypto.randomUUID()}`,
             owner: ownerId,
-            type: "PAYMENT_REQUEST",
+            type: CurrentAccountTransactionType.PAYMENT_REQUEST,
             amount: amount,
             description: "Payment Request (pending admin approval)",
             createdAt: new Date().toISOString(),
@@ -200,7 +201,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     }
   };
 
-  // --- Render Logic (No changes needed here) ---
+  // --- Render Logic ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 
@@ -251,3 +252,42 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
 }
 
 export default SalesLedger;
+
+
+
+// ==========================================================
+// FILE: CreateLedgerEntry.pipeline.req.vtl (Review for correctness)
+// ==========================================================
+
+#set( $input = $context.args.input )
+#set( $userId = $context.identity.sub )
+#set( $now = $util.time.nowISO8601() )
+
+#if( $util.isNullOrBlank($userId) )
+    $util.error("User identity is missing.", "AuthenticationError")
+#end
+
+#set( $ledgerEntryItem = {
+    "id": $util.autoId(),
+    "owner": $userId,
+    "type": $input.type,
+    "amount": $input.amount,
+    "description": $util.defaultIfNull($input.description, ""),
+    "createdAt": $now,
+    "updatedAt": $now,
+    "__typename": "LedgerEntry"
+})
+
+$util.qr($ctx.stash.put("ledgerEntryItem", $ledgerEntryItem))
+
+#set( $delta = 0 )
+#if( $input.type == "INVOICE" || $input.type == "INCREASE_ADJUSTMENT" )
+    #set( $delta = $input.amount )
+#elseif( $input.type == "CREDIT_NOTE" || $input.type == "DECREASE_ADJUSTMENT" )
+    #set( $delta = $input.amount * -1 )
+#end
+
+$util.qr($ctx.stash.put("balanceDelta", $delta))
+$util.qr($ctx.stash.put("ownerId", $userId))
+
+{}
