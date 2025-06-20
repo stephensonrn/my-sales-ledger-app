@@ -3,10 +3,7 @@ import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Button, TextField, Flex, Heading, Alert, View } from '@aws-amplify/ui-react';
 
-// --- THIS IS THE FIX (Part 1) ---
-// We import the operation string from the correct location.
 import { adminCreateAccountStatus } from './graphql/operations/mutations'; 
-// We import the types from the main API file.
 import type {
     AdminCreateAccountStatusInput,
     AdminCreateAccountStatusMutation,
@@ -38,16 +35,15 @@ function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }:
       return;
     }
 
+    // --- THIS IS THE FIX ---
+    // The input object now perfectly matches the GraphQL schema definition.
     const input: AdminCreateAccountStatusInput = {
-      // The ownerId for an AccountStatus record should be the user's sub/username.
-      // The primary key 'id' will be set by the backend resolver.
-      owner: ownerId, 
-      totalUnapprovedInvoiceValue: numericInitialValue,
+      accountId: ownerId,
+      initialUnapprovedInvoiceValue: numericInitialValue,
+      status: 'ACTIVE', // Providing a default value for the required 'status' field.
     };
 
     try {
-      // --- THIS IS THE FIX (Part 2) ---
-      // We now use the correctly imported 'adminCreateAccountStatus' variable.
       const response = await client.graphql<AdminCreateAccountStatusMutation>({
         query: adminCreateAccountStatus,
         variables: { input: input },
