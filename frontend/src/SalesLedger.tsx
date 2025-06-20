@@ -19,18 +19,18 @@ import {
   type AccountStatus,
   type CreateLedgerEntryInput,
   type SendPaymentRequestInput,
-  LedgerEntryType
+  LedgerEntryType,
+  CurrentAccountTransactionType // Import the enum
 } from './graphql/API';
 import CurrentBalance from './CurrentBalance';
 import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-// --- THIS IS THE FIX (Part 1): Import only 'Tabs' ---
 import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
-const ADMIN_EMAIL = "ross@aurumif.com"; // Using your admin email
+const ADMIN_EMAIL = "ross@aurumif.com";
 
 type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
@@ -161,6 +161,7 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
     }
   };
 
+  // --- THIS IS THE FIX ---
   const handleRequestDrawdown = async (amount: number) => {
     if (!loggedInUser) return;
     setDrawdownLoading(true);
@@ -176,6 +177,23 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
         };
         await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
         setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
+
+        // Optimistic UI Update: Add the transaction to the local state immediately.
+        const newOptimisticTransaction: CurrentAccountTransaction = {
+            __typename: "CurrentAccountTransaction",
+            id: `local-${crypto.randomUUID()}`, // Use a temporary local ID
+            owner: ownerId,
+            type: CurrentAccountTransactionType.PAYMENT_REQUEST,
+            amount: amount,
+            description: "Payment Request (pending admin approval)",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdByAdmin: null,
+        };
+        
+        // Add the new transaction to the start of the list
+        setCurrentAccountTransactions(prev => [newOptimisticTransaction, ...prev]);
+
     } catch (err) {
         setDrawdownError("Failed to send payment request. Please try again.");
         console.error("Payment request failed:", err);
@@ -213,7 +231,6 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
           <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
       )}
 
-      {/* --- THIS IS THE FIX (Part 2): Use the 'items' prop for Tabs --- */}
       <View marginTop="large">
         <Tabs
             defaultValue="salesLedger"
