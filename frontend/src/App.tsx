@@ -19,6 +19,8 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
+// --- THIS IS THE FIX ---
+// The endpoint URL has been updated with the new one from your AppSync console.
 Amplify.configure({
   Auth: {
     Cognito: {
@@ -28,7 +30,7 @@ Amplify.configure({
   },
   API: {
     GraphQL: {
-      endpoint: 'https://bpadgzbx75dtxahgvbii2q7hjy.appsync-api.eu-west-1.amazonaws.com/graphql',
+      endpoint: 'https://yautw6qiynh6hpbrkbltyexwpq.appsync-api.eu-west-1.amazonaws.com/graphql',
       region: 'eu-west-1',
       defaultAuthMode: 'userPool'
     }
@@ -54,23 +56,22 @@ const components = {
   },
 };
 
-// --- THIS IS THE FIX: The 'order' properties have been updated ---
 const formFields = {
     signUp: {
         'custom:company_name': {
             label: 'Company Name',
             placeholder: 'Enter your company name',
             isRequired: true,
-            order: 1 // Company Name is first
+            order: 1
         },
         email: {
-            order: 2 // Email is second
+            order: 2
         },
         password: {
-            order: 3 // Password is third
+            order: 3
         },
         confirm_password: {
-            order: 4 // Confirm Password is last
+            order: 4
         }
     }
 };
