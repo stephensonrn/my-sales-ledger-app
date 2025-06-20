@@ -32,7 +32,7 @@ import PaymentRequestForm from './PaymentRequestForm';
 import { Loader, Alert, View, Text } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
-const ADMIN_EMAIL = "your-admin-email@example.com"; // <-- IMPORTANT: Set your admin's email
+const ADMIN_EMAIL = "ross@aurumif.com";
 
 type AuthStatus = 'CHECKING' | 'AUTHENTICATED' | 'GUEST';
 
