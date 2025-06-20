@@ -19,8 +19,6 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
-// --- THIS IS THE FIX ---
-// The endpoint URL has been updated with the new one from your AppSync console.
 Amplify.configure({
   Auth: {
     Cognito: {
