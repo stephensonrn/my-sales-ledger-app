@@ -1,4 +1,3 @@
-// src/AddCashReceiptForm.tsx
 import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import {
@@ -15,7 +14,7 @@ import {
 
 import type {
   AdminAddCashReceiptMutation,
-  AdminAddCashReceiptMutationVariables, // Import the variables type
+  AdminAddCashReceiptInput, // The input type is what we need to build
   CurrentAccountTransaction,
 } from './graphql/API';
 
@@ -23,8 +22,6 @@ const client = generateClient();
 
 interface AddCashReceiptFormProps {
   selectedTargetSub: string;
-  // This prop from the parent isn't used here, so we can remove it for clarity
-  // loggedInUser: any; 
   onCashReceiptAdded?: (newTransaction: CurrentAccountTransaction) => void;
 }
 
@@ -45,7 +42,7 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      setError('Please enter a valid positive amount for the cash receipt.');
+      setError('Please enter a valid positive amount.');
       return;
     }
 
@@ -53,31 +50,27 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
     setError(null);
     setSuccess(null);
 
-    // This object now directly represents the variables for the mutation.
-    const mutationVariables: AdminAddCashReceiptMutationVariables = {
+    // This object now matches the AdminAddCashReceiptInput type from the schema.
+    const mutationInput: AdminAddCashReceiptInput = {
       targetOwnerId: selectedTargetSub,
       amount: numericAmount,
-      description: description || null, // Send null if description is empty
+      description: description || null,
     };
 
     try {
-      console.log('AddCashReceiptForm: Calling AdminAddCashReceipt with variables:', mutationVariables);
-      
       // --- THIS IS THE FIX ---
-      // The variables are now passed directly, not nested inside an 'input' object.
+      // The variables are now correctly wrapped in an 'input' object to match the schema.
       const response = await client.graphql<AdminAddCashReceiptMutation>({
         query: adminAddCashReceipt,
-        variables: mutationVariables,
+        variables: { input: mutationInput },
       });
-
-      console.log('AddCashReceiptForm: Response from mutation:', response);
 
       if (response.errors) throw response.errors;
 
       const createdTransaction = response.data?.adminAddCashReceipt;
 
       if (createdTransaction) {
-        setSuccess(`Successfully added cash receipt for user.`);
+        setSuccess(`Successfully added cash receipt.`);
         setAmount('');
         setDescription('');
         if (onCashReceiptAdded) {
@@ -87,7 +80,6 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
         throw new Error('Submission successful, but server did not return transaction data.');
       }
     } catch (err: any) {
-      console.error('AddCashReceiptForm: Error adding cash receipt:', err);
       const errorMessages = Array.isArray(err) ? err.map((e: any) => e.message).join(', ') : (err.message || 'An unknown error occurred.');
       setError(`Failed to add cash receipt: ${errorMessages}`);
     } finally {
@@ -111,7 +103,6 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
           onChange={(e) => setAmount(e.target.value)}
           required
           isDisabled={isLoading}
-          placeholder="e.g., 50.00"
         />
         <TextField
           label="Description (Optional):"
@@ -119,7 +110,6 @@ function AddCashReceiptForm({ selectedTargetSub, onCashReceiptAdded }: AddCashRe
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           isDisabled={isLoading}
-          placeholder="e.g., Cash payment from customer"
         />
         <Button type="submit" isLoading={isLoading} variation="primary" marginTop="small">
           Add Cash Receipt
