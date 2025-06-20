@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { getCurrentUser } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions
@@ -32,32 +33,31 @@ interface SalesLedgerProps {
 }
 
 function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
-  // We only need one client instance.
   const [client] = useState(generateClient());
-
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [currentAccountTransactions, setCurrentAccountTransactions] = useState<CurrentAccountTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // This single, robust useEffect handles initialization, data fetching, and subscriptions.
   useEffect(() => {
-    let subscription: any; // To hold the subscription object for cleanup
+    let subscription: any;
 
-    const initialize = async () => {
+    const loadDataAndSubscribe = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // 1. Get the current user to determine whose data to fetch
+        console.log("Attempting to load data...");
         const user = await getCurrentUser();
         const ownerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
 
         if (!ownerId) {
-          // If we can't determine an owner, stop.
+          console.log("No ownerId found, stopping.");
           setLoading(false);
           return;
         }
 
-        // 2. Fetch all data, with pagination for ledger entries
+        console.log(`Fetching data for owner: ${ownerId}`);
+        
         let allLedgerEntries: LedgerEntry[] = [];
         let nextToken: string | null | undefined = null;
         do {
@@ -76,11 +76,15 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         });
         const transactionItems = transactionsRes?.data?.listCurrentAccountTransactions?.items?.filter(Boolean) || [];
 
-        // 3. Set all state at once
+        console.log(`Fetched ${allLedgerEntries.length} ledger entries.`);
         setEntries(allLedgerEntries);
         setCurrentAccountTransactions(transactionItems);
         
-        // 4. Now that initial data is loaded, set up the real-time subscription
+        // Cleanup existing subscription before creating a new one
+        if (subscription) {
+            subscription.unsubscribe();
+        }
+        
         subscription = client.graphql({
             query: onCreateLedgerEntry,
             variables: { owner: ownerId }
@@ -95,24 +99,45 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
         });
 
       } catch (err) {
-        console.error("Error during initialization:", err);
-        setError("Failed to load sales ledger data.");
+        console.error("Error during data loading:", err);
+        setError("Could not load user data. Please try refreshing.");
       } finally {
         setLoading(false);
       }
     };
 
-    initialize();
-
-    // 5. Cleanup function: runs when the component unmounts
-    return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+    // This listener reacts to authentication events
+    const hubListener = (data: any) => {
+        switch (data.payload.event) {
+            case 'signedIn':
+                console.log('Hub event: signedIn');
+                loadDataAndSubscribe();
+                break;
+            case 'signedOut':
+                console.log('Hub event: signedOut');
+                setEntries([]);
+                setCurrentAccountTransactions([]);
+                setError(null);
+                break;
+        }
     };
-  }, [client, isAdmin, targetUserId]); // This effect will re-run if the user context changes
 
-  // --- Calculations (These are now correct from our last step) ---
+    Hub.listen('auth', hubListener);
+
+    // Initial load when the component mounts
+    loadDataAndSubscribe();
+
+    // Cleanup function
+    return () => {
+        Hub.remove('auth', hubListener);
+        if (subscription) {
+            subscription.unsubscribe();
+        }
+    };
+  }, [client, isAdmin, targetUserId]); // Effect dependencies
+
+  // ... All the calculation and mutation handler code remains the same ...
+  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -144,26 +169,22 @@ function SalesLedger({ targetUserId, isAdmin = false }: SalesLedgerProps) {
     }, 0);
   }, [currentAccountTransactions]);
   
-  const approvedSalesLedger = salesLedgerBalance; // Placeholder
+  const approvedSalesLedger = salesLedgerBalance;
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-  // --- Mutation Handler (No changes needed here) ---
+  // --- Mutation Handler ---
   const handleAddLedgerEntry = async (newEntry: LedgerEntry) => {
-    // This function now correctly assumes a user context is established.
     try {
       const user = await getCurrentUser();
       const ownerId = isAdmin ? targetUserId : (user.username || user.attributes?.sub);
       if(!ownerId) throw new Error("Could not determine owner for transaction.");
 
-      if (isAdmin) {
-        // ... Admin logic
-      } else {
-        const input: CreateLedgerEntryInput = {
-          amount: newEntry.amount, type: newEntry.type, description: newEntry.description
-        };
-        await client.graphql({ query: createLedgerEntry, variables: { input } });
-      }
+      const input: CreateLedgerEntryInput = {
+        amount: newEntry.amount, type: newEntry.type, description: newEntry.description
+      };
+      await client.graphql({ query: createLedgerEntry, variables: { input } });
+      
     } catch (err) {
       console.error("Add entry failed:", err);
       setError("Failed to add ledger entry.");
