@@ -1,6 +1,4 @@
-// FILE: src/App.tsx
-// ==========================================================
-
+// src/App.tsx
 import React from 'react';
 import { Amplify } from 'aws-amplify';
 import {
@@ -10,7 +8,7 @@ import {
   View,
   Flex,
   useAuthenticator,
-  Loader, // Import Loader
+  Loader,
 } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 
@@ -21,7 +19,6 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
-// --- This configuration remains the same ---
 Amplify.configure({
   Auth: {
     Cognito: {
@@ -38,7 +35,6 @@ Amplify.configure({
   }
 });
 
-// --- This component remains the same ---
 const components = {
   Header() {
     return (
@@ -58,8 +54,25 @@ const components = {
   },
 };
 
-// --- THIS IS THE MAIN CHANGE IN APP.TSX ---
-// This component now handles passing the user prop down correctly.
+const formFields = {
+    signUp: {
+        // --- THIS IS THE FIX ---
+        // The key now exactly matches the Cognito attribute name: 'custom:company_name'
+        'custom:company_name': {
+            label: 'Company Name',
+            placeholder: 'Enter your company name',
+            isRequired: true,
+            order: 3 
+        },
+        password: {
+            order: 4
+        },
+        confirm_password: {
+            order: 5
+        }
+    }
+};
+
 function AuthenticatedContent() {
   const { user, signOut } = useAuthenticator((context) => [
     context.user,
@@ -92,11 +105,10 @@ function AuthenticatedContent() {
 
       <main>
         {isAdminLoading ? (
-          <Loader size="large" /> // Use a loader while checking admin status
+          <Loader size="large" />
         ) : isAdmin ? (
           <AdminPage loggedInUser={user} />
         ) : (
-          // We now pass the 'user' object from the authenticator directly as a prop
           <SalesLedger loggedInUser={user} />
         )}
       </main>
@@ -104,13 +116,13 @@ function AuthenticatedContent() {
   );
 }
 
-// --- The App component remains the same ---
 function App() {
   return (
     <Authenticator
       loginMechanisms={['email']}
-      signUpAttributes={['email']}
+      signUpAttributes={['email', 'custom:company_name']}
       components={components}
+      formFields={formFields}
     >
       <AuthenticatedContent />
     </Authenticator>
