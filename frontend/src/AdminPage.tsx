@@ -35,7 +35,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
 
-  // ✅ Setup authenticated client after confirming session
   useEffect(() => {
     const setupClient = async () => {
       const { getCurrentUser } = await import('aws-amplify/auth');
@@ -61,7 +60,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
       setUsers([]);
     }
 
-    console.log(`AdminPage: Fetching users... ${token ? 'nextToken: ' + token.substring(0, 10) + '...' : 'Initial fetch'}`);
     try {
       const response = await client.graphql<AdminListUsersQuery>({
         query: adminListUsers,
@@ -69,11 +67,9 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
           limit: USERS_PER_PAGE,
           nextToken: token
         },
-        authMode: 'userPool'
       });
 
       if (response.errors) {
-        console.error("AdminPage: GraphQL errors while fetching users:", response.errors);
         throw response.errors;
       }
 
@@ -81,7 +77,11 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
       const fetchedUsers = resultData?.users?.filter(Boolean) as CognitoUser[] || [];
       const paginationToken = resultData?.nextToken ?? null;
 
-      setUsers(prevUsers => token ? [...prevUsers, ...fetchedUsers] : fetchedUsers);
+      // --- THIS IS THE FIX ---
+      // Filter out any user who is in the "Admin" group.
+      const nonAdminUsers = fetchedUsers.filter(user => !user.groups?.includes('Admin'));
+
+      setUsers(prevUsers => token ? [...prevUsers, ...nonAdminUsers] : nonAdminUsers);
       setNextToken(paginationToken);
 
     } catch (err: any) {
@@ -135,7 +135,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
             <tbody>
               {!isLoadingUsers && users.length === 0 && !fetchError && (
                 <tr key="no-users-row">
-                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Text>No users found.</Text></td>
+                  <td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Text>No non-admin users found.</Text></td>
                 </tr>
               )}
               {users.map((user) => {
@@ -169,7 +169,7 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
         {nextToken && !isLoadingUsers && (
           <Button onClick={() => fetchUsers(nextToken)} marginTop="small" isFullWidth={false}>Load More Users</Button>
         )}
-        {isLoadingUsers && users.length > 0 && <Loader marginTop="small" />}
+        {isLoadingUsers && users.length === 0 && <Loader marginTop="small" />}
       </Card>
 
       <View marginTop="large">
@@ -186,7 +186,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                 <ManageAccountStatus
                   selectedOwnerSub={selectedUser.sub}
                   targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub}
-                  loggedInUser={loggedInUser}
                 />
               </Card>
 
