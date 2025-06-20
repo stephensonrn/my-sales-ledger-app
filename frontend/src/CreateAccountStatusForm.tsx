@@ -3,20 +3,22 @@ import React, { useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Button, TextField, Flex, Heading, Alert, View } from '@aws-amplify/ui-react';
 
-// Corrected imports from the single generated API file
-import {
-    adminCreateAccountStatus,
-    type AdminCreateAccountStatusInput,
-    type AdminCreateAccountStatusMutation,
-    type AccountStatus 
-} from './graphql/API'; 
+// --- THIS IS THE FIX (Part 1) ---
+// We import the operation string from the correct location.
+import { adminCreateAccountStatus } from './graphql/operations/mutations'; 
+// We import the types from the main API file.
+import type {
+    AdminCreateAccountStatusInput,
+    AdminCreateAccountStatusMutation,
+    AccountStatus
+} from './graphql/API';
 
 const client = generateClient();
 
 interface CreateAccountStatusFormProps {
-  ownerId: string; 
-  ownerDisplayName?: string; 
-  onStatusCreated: (newStatus: AccountStatus) => void; 
+  ownerId: string;
+  ownerDisplayName?: string;
+  onStatusCreated: (newStatus: AccountStatus) => void;
 }
 
 function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }: CreateAccountStatusFormProps) {
@@ -36,28 +38,27 @@ function CreateAccountStatusForm({ ownerId, ownerDisplayName, onStatusCreated }:
       return;
     }
 
-    // Ensure this input structure matches your AdminCreateAccountStatusInput type
     const input: AdminCreateAccountStatusInput = {
-      ownerId: ownerId, 
-      initialUnapprovedInvoiceValue: numericInitialValue,
+      // The ownerId for an AccountStatus record should be the user's sub/username.
+      // The primary key 'id' will be set by the backend resolver.
+      owner: ownerId, 
+      totalUnapprovedInvoiceValue: numericInitialValue,
     };
 
     try {
-      console.log("CreateAccountStatusForm: Attempting to create status with input:", input);
+      // --- THIS IS THE FIX (Part 2) ---
+      // We now use the correctly imported 'adminCreateAccountStatus' variable.
       const response = await client.graphql<AdminCreateAccountStatusMutation>({
-        query: AdminCreateAccountStatusDocument,
-        variables: { input: input }, 
-        authMode: 'userPool' 
+        query: adminCreateAccountStatus,
+        variables: { input: input },
       });
-      console.log("CreateAccountStatusForm: Response from mutation:", response);
 
       if (response.errors) throw response.errors;
 
       const newStatus = response.data?.adminCreateAccountStatus;
       if (newStatus) {
-        console.log("CreateAccountStatusForm: Status created successfully:", newStatus);
-        onStatusCreated(newStatus as AccountStatus); 
-        setInitialValue('0'); 
+        onStatusCreated(newStatus as AccountStatus);
+        setInitialValue('0');
       } else {
         throw new Error("Failed to create account status, no data returned from server.");
       }
