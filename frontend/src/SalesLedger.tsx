@@ -26,8 +26,8 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-// --- THIS IS THE FIX (Part 1): Import Tabs and TabItem ---
-import { Loader, Alert, View, Text, Heading, Flex, Tabs, TabItem } from '@aws-amplify/ui-react';
+// --- THIS IS THE FIX (Part 1): Import only 'Tabs' ---
+import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com"; // Using your admin email
@@ -213,19 +213,23 @@ function SalesLedger({ loggedInUser, isAdmin = false }: SalesLedgerProps) {
           <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
       )}
 
-      {/* --- THIS IS THE FIX (Part 2): Replace Flex container with Tabs --- */}
+      {/* --- THIS IS THE FIX (Part 2): Use the 'items' prop for Tabs --- */}
       <View marginTop="large">
         <Tabs
-            justifyContent="flex-start"
             defaultValue="salesLedger"
-        >
-            <TabItem title="Sales Ledger">
-                <LedgerHistory entries={entries} isLoading={loading} />
-            </TabItem>
-            <TabItem title="Current Account">
-                <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
-            </TabItem>
-        </Tabs>
+            items={[
+                {
+                    label: 'Sales Ledger',
+                    value: 'salesLedger',
+                    content: <LedgerHistory entries={entries} isLoading={loading} />
+                },
+                {
+                    label: 'Current Account',
+                    value: 'currentAccount',
+                    content: <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                }
+            ]}
+        />
       </View>
     </View>
   );
