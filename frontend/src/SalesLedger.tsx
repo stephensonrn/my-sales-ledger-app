@@ -1,7 +1,5 @@
-// src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
-// --- THIS IS THE FIX (Part 1): Import fetchUserAttributes ---
 import { fetchUserAttributes } from 'aws-amplify/auth';
 import {
   listLedgerEntries,
@@ -51,7 +49,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
 
   useEffect(() => {
     const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
-
     if (!ownerSub) {
       setLoading(false);
       return;
@@ -63,10 +60,22 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     const loadData = async () => {
         setLoading(true);
         setError(null);
+
+        const now = new Date();
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const firstDayOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const startDate = firstDayOfMonth.toISOString();
+        const endDate = firstDayOfNextMonth.toISOString();
+
+        const monthlyFilter = {
+            owner: { eq: ownerSub },
+            createdAt: { between: [startDate, endDate] }
+        };
+
         try {
             const [ledgerRes, transactionsRes, statusRes] = await Promise.all([
-                client.graphql({ query: listLedgerEntries, variables: { filter: { owner: { eq: ownerSub } } } }),
-                client.graphql({ query: listCurrentAccountTransactions, variables: { filter: { owner: { eq: ownerSub } } } }),
+                client.graphql({ query: listLedgerEntries, variables: { filter: monthlyFilter } }),
+                client.graphql({ query: listCurrentAccountTransactions, variables: { filter: monthlyFilter } }),
                 client.graphql({ query: listAccountStatuses, variables: { filter: { owner: { eq: ownerSub } }, limit: 1 } })
             ]);
 
@@ -80,7 +89,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
                 setAccountStatus(statusItem);
             }
         } catch (err) {
-            console.error("Error loading data:", err);
+            console.error("Error loading monthly data:", err);
             if (isMounted) setError("Failed to load ledger data.");
         } finally {
             if (isMounted) setLoading(false);
@@ -95,7 +104,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
         }).subscribe({
             next: ({ data }) => {
                 if (isMounted && data?.onCreateLedgerEntry) {
-                    setEntries((prev) => [data.onCreateLedgerEntry, ...prev.filter(e => e.id !== data.onCreateLedgerEntry.id)]);
+                    setEntries((prev) => [data.onCreateLedgerEntry, ...prev].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
                 }
             }
         });
@@ -110,8 +119,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     };
   }, [loggedInUser, isAdmin, targetUserId, client]);
 
-
-  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -142,8 +149,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
-
-  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
     try {
@@ -164,7 +169,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     setDrawdownError(null);
     setDrawdownSuccess(null);
     try {
-        // --- THIS IS THE FIX (Part 2): Fetch attributes just-in-time ---
         const userAttributes = await fetchUserAttributes();
         const ownerId = userAttributes.sub;
         const companyName = userAttributes['custom:company_name'];
@@ -201,7 +205,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null }: Sal
     }
   };
 
-  // --- Render Logic ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 

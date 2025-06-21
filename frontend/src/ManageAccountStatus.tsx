@@ -1,22 +1,9 @@
-// FILE: src/ManageAccountStatus.tsx
-// ==========================================================
-// This file is corrected to remove a faulty validation check.
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Button, TextField, Loader, Text, View, Alert, Flex } from '@aws-amplify/ui-react';
-
 import { listAccountStatuses } from './graphql/operations/queries';
 import { updateAccountStatus } from './graphql/operations/mutations';
-
-import type {
-  AccountStatus,
-  ListAccountStatusesQuery,
-  ListAccountStatusesQueryVariables,
-  UpdateAccountStatusInput,
-  UpdateAccountStatusMutation,
-} from './graphql/API';
-
+import type { AccountStatus, ListAccountStatusesQuery, UpdateAccountStatusInput, UpdateAccountStatusMutation } from './graphql/API';
 import CreateAccountStatusForm from './CreateAccountStatusForm';
 
 const client = generateClient();
@@ -24,41 +11,36 @@ const client = generateClient();
 interface ManageAccountStatusProps {
   selectedOwnerSub: string | null;
   targetUserName?: string | null;
+  // --- THIS IS THE FIX (Part 5): Added prop to the interface ---
+  onStatusUpdated?: () => void;
 }
 
-function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccountStatusProps) {
+function ManageAccountStatus({ selectedOwnerSub, targetUserName, onStatusUpdated }: ManageAccountStatusProps) {
   const [status, setStatus] = useState<AccountStatus | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
-  const [totalUnapprovedInvoiceValue, setTotalUnapprovedInvoiceValue] = useState<string>('');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [totalUnapprovedInvoiceValue, setTotalUnapprovedInvoiceValue] = useState('');
 
   const fetchAccountStatus = useCallback(async (ownerId: string) => {
     if (!ownerId) {
-        setStatus(null);
-        setShowCreateForm(false);
-        return;
+      setStatus(null);
+      setShowCreateForm(false);
+      return;
     }
     setIsLoading(true);
     setError(null);
     setUpdateSuccess(null);
     setUpdateError(null);
     setShowCreateForm(false);
-
     try {
-      const variables: ListAccountStatusesQueryVariables = {
-        filter: { owner: { eq: ownerId } },
-        limit: 1,
-      };
-
       const response = await client.graphql<ListAccountStatusesQuery>({
         query: listAccountStatuses,
-        variables,
+        variables: { filter: { owner: { eq: ownerId } }, limit: 1 },
       });
-
       const fetchedStatus = response.data?.listAccountStatuses?.items?.[0];
       if (fetchedStatus) {
         setStatus(fetchedStatus as AccountStatus);
@@ -70,7 +52,6 @@ function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccount
       }
     } catch (err: any) {
       setError(`Failed to load account status.`);
-      console.error(err);
     } finally {
       setIsLoading(false);
     }
@@ -87,57 +68,52 @@ function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccount
 
   const handleUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!status || !status.id) {
-      setUpdateError("Cannot update: Account status is not loaded.");
-      return;
-    }
-
+    if (!status || !status.id) return;
     setIsUpdating(true);
     setUpdateError(null);
     setUpdateSuccess(null);
-
     const numericValue = parseFloat(totalUnapprovedInvoiceValue);
     if (isNaN(numericValue) || numericValue < 0) {
       setUpdateError("Please enter a valid non-negative amount.");
       setIsUpdating(false);
       return;
     }
-
     const input: UpdateAccountStatusInput = {
-      id: status.id, // Use the ID of the status record itself
+      id: status.id,
       totalUnapprovedInvoiceValue: numericValue,
     };
-
     try {
       const response = await client.graphql<UpdateAccountStatusMutation>({
         query: updateAccountStatus,
         variables: { input },
       });
-
       const updatedStatus = response.data?.updateAccountStatus;
       if (updatedStatus) {
         setStatus(updatedStatus as AccountStatus);
         setTotalUnapprovedInvoiceValue(updatedStatus.totalUnapprovedInvoiceValue.toString());
         setUpdateSuccess("Account status updated successfully!");
+        // --- THIS IS THE FIX (Part 6): Call the callback on success ---
+        if (onStatusUpdated) onStatusUpdated();
       } else {
         throw new Error("Update response did not return an account status.");
       }
-    } catch (err: any) {
+    } catch (err) {
       setUpdateError(`Failed to update status.`);
-      console.error(err);
     } finally {
       setIsUpdating(false);
     }
   };
-  
+
   const handleStatusCreated = (newStatus: AccountStatus) => {
     setStatus(newStatus);
     setTotalUnapprovedInvoiceValue(newStatus.totalUnapprovedInvoiceValue.toString());
     setShowCreateForm(false);
-    setError(null);
     setUpdateSuccess("Account status created successfully!");
+    // --- THIS IS THE FIX (Part 6): Call the callback on success ---
+    if (onStatusUpdated) onStatusUpdated();
   };
-
+  
+  // Render logic remains the same...
   if (!selectedOwnerSub) return null;
   if (isLoading) return <Loader />;
   if (error) return <Alert variation="error">{error}</Alert>;
@@ -151,7 +127,6 @@ function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccount
       />
     );
   }
-
   if (status) {
     return (
       <View as="form" onSubmit={handleUpdate}>
@@ -166,16 +141,13 @@ function ManageAccountStatus({ selectedOwnerSub, targetUserName }: ManageAccount
             required
             disabled={isUpdating}
           />
-          <Button type="submit" variation="primary" isLoading={isUpdating}>
-            Update Status
-          </Button>
+          <Button type="submit" variation="primary" isLoading={isUpdating}>Update Status</Button>
           {updateError && <Alert variation="error" marginTop="small">{updateError}</Alert>}
           {updateSuccess && <Alert variation="success" marginTop="small">{updateSuccess}</Alert>}
         </Flex>
       </View>
     );
   }
-
   return <Text>Unable to display account status.</Text>;
 }
 
