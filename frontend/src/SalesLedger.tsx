@@ -1,6 +1,7 @@
 // src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
+import { fetchUserAttributes } from 'aws-amplify/auth';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -34,7 +35,6 @@ interface SalesLedgerProps {
   loggedInUser: any;
   isAdmin?: boolean;
   targetUserId?: string | null;
-  // --- THIS IS THE FIX (Part 1): Add refreshKey to props interface ---
   refreshKey?: number;
 }
 
@@ -49,8 +49,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
-  // --- THIS IS THE FIX (Part 2): Add refreshKey to the dependency array ---
-  // This ensures the effect re-runs when the parent signals a refresh.
   useEffect(() => {
     const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
@@ -113,7 +111,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   }, [loggedInUser, isAdmin, targetUserId, client, refreshKey]);
 
 
-  // --- Calculations (No changes needed) ---
+  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -145,7 +143,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const netAvailability = grossAvailability - currentAccountBalance;
 
 
-  // --- Mutation Handlers (No changes needed) ---
+  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
     try {
@@ -160,34 +158,46 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
       console.error(err);
     }
   };
-
+  
+  // --- THIS IS THE FIX ---
+  // The function now fetches fresh user attributes to avoid timing issues.
   const handleRequestDrawdown = async (amount: number) => {
-    if (!loggedInUser) return;
     setDrawdownLoading(true);
     setDrawdownError(null);
     setDrawdownSuccess(null);
     try {
-        const { sub, email, 'custom:company_name': companyName } = loggedInUser.attributes;
+        const userAttributes = await fetchUserAttributes();
+        const ownerId = userAttributes.sub;
+        const companyName = userAttributes['custom:company_name'];
+        const userEmail = userAttributes.email;
+
+        if (!ownerId) {
+            throw new Error("Could not determine user ID for payment request.");
+        }
+        
         const input: SendPaymentRequestInput = {
             amount,
             toEmail: ADMIN_EMAIL,
-            subject: `Payment Request from ${companyName || email}`,
-            body: `User (${email}) from company '${companyName || 'N/A'}' has requested a drawdown payment of £${amount.toFixed(2)}.`,
+            subject: `Payment Request from ${companyName || userEmail}`,
+            body: `User (${userEmail}) from company '${companyName || 'N/A'}' has requested a drawdown payment of £${amount.toFixed(2)}.`,
             companyName: companyName,
         };
         await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
         setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
+
         const newOptimisticTransaction: CurrentAccountTransaction = {
             __typename: "CurrentAccountTransaction",
             id: `local-${crypto.randomUUID()}`,
-            owner: sub,
+            owner: ownerId,
             type: CurrentAccountTransactionType.PAYMENT_REQUEST,
             amount: amount,
             description: "Payment Request (pending admin approval)",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
+        
         setCurrentAccountTransactions(prev => [newOptimisticTransaction, ...prev]);
+
     } catch (err) {
         setDrawdownError("Failed to send payment request. Please try again.");
         console.error("Payment request failed:", err);
@@ -196,7 +206,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
     }
   };
 
-  // --- Render Logic (No changes needed) ---
+  // --- Render Logic ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 
