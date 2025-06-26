@@ -1,4 +1,6 @@
-// src/SalesLedger.tsx
+// FILE: src/SalesLedger.tsx (Updated)
+// ==========================================================
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -26,8 +28,9 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-// --- THIS IS NEW (Part 1): Import Button and Flex ---
 import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex } from '@aws-amplify/ui-react';
+// --- THIS IS NEW (Part 2): Import the StorageManager component ---
+import { StorageManager } from '@aws-amplify/ui-react-storage';
 
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com";
@@ -50,9 +53,10 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
+  // --- THIS IS NEW (Part 3): Get the owner's SUB ID for the storage path ---
+  const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
+  useEffect(() => {
     if (!ownerSub) {
       setLoading(false);
       return;
@@ -109,7 +113,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
         isMounted = false;
         if (subscription) subscription.unsubscribe();
     };
-  }, [loggedInUser, isAdmin, targetUserId, client, refreshKey]);
+  }, [loggedInUser, isAdmin, targetUserId, client, refreshKey, ownerSub]);
 
 
   // --- Calculations ---
@@ -142,38 +146,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
-
-
-  // --- THIS IS NEW (Part 2): Add the CSV download helper function ---
-  const downloadAsCSV = (data: (LedgerEntry | CurrentAccountTransaction)[], filename: string) => {
-    if (!data || data.length === 0) {
-        alert("No transactions to download.");
-        return;
-    }
-    const headers = ["Date", "Type", "Description", "Amount"];
-    const csvRows = [
-        headers.join(','),
-        ...data.map(row => {
-            const date = new Date(row.createdAt).toLocaleDateString('en-GB');
-            const type = row.type.replace(/_/g, ' ');
-            // Ensure description with commas is wrapped in quotes
-            const description = `"${row.description || ''}"`; 
-            const amount = row.amount;
-            return [date, type, description, amount].join(',');
-        })
-    ];
-    
-    const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
 
   // --- Mutation Handlers ---
@@ -264,31 +236,31 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
           <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
       )}
       <View marginTop="large">
-        {/* --- THIS IS NEW (Part 3): Update the Tabs to include the download buttons --- */}
         <Tabs
             defaultValue="salesLedger"
             items={[
                 {
                     label: 'Sales Ledger',
                     value: 'salesLedger',
-                    content: (
-                        <View>
-                            <Flex justifyContent="flex-end" paddingBottom="small">
-                                <Button size="small" onClick={() => downloadAsCSV(entries, 'SalesLedgerStatement')}>Download CSV</Button>
-                            </Flex>
-                            <LedgerHistory entries={entries} isLoading={loading} />
-                        </View>
-                    )
+                    content: <LedgerHistory entries={entries} isLoading={loading} />
                 },
                 {
                     label: 'Current Account',
                     value: 'currentAccount',
+                    content: <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                },
+                // --- THIS IS NEW (Part 4): Add the Documents tab ---
+                {
+                    label: 'Documents',
+                    value: 'documents',
                     content: (
-                        <View>
-                            <Flex justifyContent="flex-end" paddingBottom="small">
-                                <Button size="small" onClick={() => downloadAsCSV(currentAccountTransactions, 'CurrentAccountStatement')}>Download CSV</Button>
-                            </Flex>
-                            <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                        <View paddingTop="medium">
+                            <StorageManager
+                                path={`private/${ownerSub}/`}
+                                maxFileCount={10}
+                                acceptedFileTypes={['image/*', '.pdf', '.doc', '.docx', '.xls', '.xlsx']}
+                                isResumable
+                            />
                         </View>
                     )
                 }

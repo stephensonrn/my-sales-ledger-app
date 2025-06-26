@@ -1,4 +1,6 @@
-// src/App.tsx
+// FILE: src/App.tsx (Updated)
+// ==========================================================
+
 import React from 'react';
 import { Amplify } from 'aws-amplify';
 import {
@@ -19,6 +21,7 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
+// --- THIS IS THE FIX (Part 1): Add the Storage configuration ---
 Amplify.configure({
   Auth: {
     Cognito: {
@@ -31,6 +34,13 @@ Amplify.configure({
       endpoint: 'https://yautw6qiynh6hpbrkbltyexwpq.appsync-api.eu-west-1.amazonaws.com/graphql',
       region: 'eu-west-1',
       defaultAuthMode: 'userPool'
+    }
+  },
+  Storage: {
+    S3: {
+      bucket: 'salesledgerapp-backend-eu-storageresourcessalesled-rtys52eiwe9j',
+      region: 'eu-west-1',
+      identityPoolId: 'eu-west-1:6cb99421-7e61-40e5-bfab-cd80f1c6338a'
     }
   }
 });
@@ -82,9 +92,6 @@ function AuthenticatedContent() {
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
   const displayName = user?.signInDetails?.loginId || user?.username || 'User';
 
-  // --- THIS IS THE FIX ---
-  // We add a check to ensure the user object is fully loaded and has the sub ID.
-  // This prevents rendering SalesLedger with an incomplete user object.
   const isUserReady = !!(user && (user.attributes?.sub || user.userId));
 
   return (
@@ -110,7 +117,6 @@ function AuthenticatedContent() {
       )}
 
       <main>
-        {/* The main content is now also gated by isUserReady */}
         {!isUserReady || isAdminLoading ? (
           <Loader size="large" />
         ) : isAdmin ? (
