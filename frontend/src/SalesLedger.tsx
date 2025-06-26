@@ -29,7 +29,6 @@ import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
 import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex } from '@aws-amplify/ui-react';
-// --- THIS IS NEW (Part 2): Import the StorageManager component ---
 import { StorageManager } from '@aws-amplify/ui-react-storage';
 
 const ADVANCE_RATE = 0.9;
@@ -53,7 +52,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
 
-  // --- THIS IS NEW (Part 3): Get the owner's SUB ID for the storage path ---
   const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
   useEffect(() => {
@@ -116,7 +114,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   }, [loggedInUser, isAdmin, targetUserId, client, refreshKey, ownerSub]);
 
 
-  // --- Calculations ---
   const salesLedgerBalance = useMemo(() => {
     return entries.reduce((acc, entry) => {
       const amount = entry.amount || 0;
@@ -147,8 +144,35 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
+  const downloadAsCSV = (data: (LedgerEntry | CurrentAccountTransaction)[], filename: string) => {
+    if (!data || data.length === 0) {
+        alert("No transactions to download.");
+        return;
+    }
+    const headers = ["Date", "Type", "Description", "Amount"];
+    const csvRows = [
+        headers.join(','),
+        ...data.map(row => {
+            const date = new Date(row.createdAt).toLocaleDateString('en-GB');
+            const type = row.type.replace(/_/g, ' ');
+            const description = `"${row.description || ''}"`;
+            const amount = row.amount;
+            return [date, type, description, amount].join(',');
+        })
+    ];
+    
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
     try {
@@ -209,7 +233,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
     }
   };
 
-  // --- Render Logic ---
   if (loading) return <Loader size="large" />;
   if (error) return <Alert variation="error">{error}</Alert>;
 
@@ -242,14 +265,27 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
                 {
                     label: 'Sales Ledger',
                     value: 'salesLedger',
-                    content: <LedgerHistory entries={entries} isLoading={loading} />
+                    content: (
+                        <View>
+                            <Flex justifyContent="flex-end" paddingBottom="small">
+                                <Button size="small" onClick={() => downloadAsCSV(entries, 'SalesLedgerStatement')}>Download CSV</Button>
+                            </Flex>
+                            <LedgerHistory entries={entries} isLoading={loading} />
+                        </View>
+                    )
                 },
                 {
                     label: 'Current Account',
                     value: 'currentAccount',
-                    content: <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                    content: (
+                        <View>
+                            <Flex justifyContent="flex-end" paddingBottom="small">
+                                <Button size="small" onClick={() => downloadAsCSV(currentAccountTransactions, 'CurrentAccountStatement')}>Download CSV</Button>
+                            </Flex>
+                            <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                        </View>
+                    )
                 },
-                // --- THIS IS NEW (Part 4): Add the Documents tab ---
                 {
                     label: 'Documents',
                     value: 'documents',
