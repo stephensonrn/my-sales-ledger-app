@@ -1,8 +1,8 @@
-// FILE: src/App.tsx (Updated)
+// FILE: src/App.tsx (Corrected)
 // ==========================================================
 
 import React from 'react';
-import { Amplify } from 'aws-amplify';
+// --- THIS IS THE FIX (Part 2): Remove Amplify and configuration from this file ---
 import {
   Authenticator,
   Button,
@@ -21,29 +21,7 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 import './App.css';
 import aurumLogo from '/Aurum.png';
 
-// --- THIS IS THE FIX (Part 1): Add the Storage configuration ---
-Amplify.configure({
-  Auth: {
-    Cognito: {
-      userPoolId: 'eu-west-1_i09IJ2ySB',
-      userPoolClientId: '28889re05prqhvu9kr7g5jtdid',
-    }
-  },
-  API: {
-    GraphQL: {
-      endpoint: 'https://yautw6qiynh6hpbrkbltyexwpq.appsync-api.eu-west-1.amazonaws.com/graphql',
-      region: 'eu-west-1',
-      defaultAuthMode: 'userPool'
-    }
-  },
-  Storage: {
-    S3: {
-      bucket: 'salesledgerapp-backend-eu-storageresourcessalesled-rtys52eiwe9j',
-      region: 'eu-west-1',
-      identityPoolId: 'eu-west-1:6cb99421-7e61-40e5-bfab-cd80f1c6338a'
-    }
-  }
-});
+// The Amplify.configure() block has been moved to main.tsx
 
 const components = {
   Header() {
