@@ -26,7 +26,8 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-import { Loader, Alert, View, Text, Heading, Tabs } from '@aws-amplify/ui-react';
+// --- THIS IS NEW (Part 1): Import Button and Flex ---
+import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex } from '@aws-amplify/ui-react';
 
 const ADVANCE_RATE = 0.9;
 const ADMIN_EMAIL = "ross@aurumif.com";
@@ -143,6 +144,38 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const netAvailability = grossAvailability - currentAccountBalance;
 
 
+  // --- THIS IS NEW (Part 2): Add the CSV download helper function ---
+  const downloadAsCSV = (data: (LedgerEntry | CurrentAccountTransaction)[], filename: string) => {
+    if (!data || data.length === 0) {
+        alert("No transactions to download.");
+        return;
+    }
+    const headers = ["Date", "Type", "Description", "Amount"];
+    const csvRows = [
+        headers.join(','),
+        ...data.map(row => {
+            const date = new Date(row.createdAt).toLocaleDateString('en-GB');
+            const type = row.type.replace(/_/g, ' ');
+            // Ensure description with commas is wrapped in quotes
+            const description = `"${row.description || ''}"`; 
+            const amount = row.amount;
+            return [date, type, description, amount].join(',');
+        })
+    ];
+    
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
   // --- Mutation Handlers ---
   const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
     if (!loggedInUser) return;
@@ -158,9 +191,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
       console.error(err);
     }
   };
-  
-  // --- THIS IS THE FIX ---
-  // The function now fetches fresh user attributes to avoid timing issues.
+
   const handleRequestDrawdown = async (amount: number) => {
     setDrawdownLoading(true);
     setDrawdownError(null);
@@ -233,18 +264,33 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
           <LedgerEntryForm onSubmit={handleAddLedgerEntry} />
       )}
       <View marginTop="large">
+        {/* --- THIS IS NEW (Part 3): Update the Tabs to include the download buttons --- */}
         <Tabs
             defaultValue="salesLedger"
             items={[
                 {
                     label: 'Sales Ledger',
                     value: 'salesLedger',
-                    content: <LedgerHistory entries={entries} isLoading={loading} />
+                    content: (
+                        <View>
+                            <Flex justifyContent="flex-end" paddingBottom="small">
+                                <Button size="small" onClick={() => downloadAsCSV(entries, 'SalesLedgerStatement')}>Download CSV</Button>
+                            </Flex>
+                            <LedgerHistory entries={entries} isLoading={loading} />
+                        </View>
+                    )
                 },
                 {
                     label: 'Current Account',
                     value: 'currentAccount',
-                    content: <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                    content: (
+                        <View>
+                            <Flex justifyContent="flex-end" paddingBottom="small">
+                                <Button size="small" onClick={() => downloadAsCSV(currentAccountTransactions, 'CurrentAccountStatement')}>Download CSV</Button>
+                            </Flex>
+                            <LedgerHistory entries={currentAccountTransactions} isLoading={loading} />
+                        </View>
+                    )
                 }
             ]}
         />
