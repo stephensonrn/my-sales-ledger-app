@@ -1,3 +1,6 @@
+// FILE: src/AdminPage.tsx (Updated)
+// ==========================================================
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { type User } from 'aws-amplify/auth';
@@ -19,6 +22,7 @@ import type { CognitoUser, AdminListUsersQuery } from './graphql/API';
 import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
 import SalesLedger from './SalesLedger';
+import MonthlyStatisticsTable from './MonthlyStatisticsTable'; // --- THIS IS NEW (Part 1) ---
 
 const USERS_PER_PAGE = 10;
 
@@ -33,8 +37,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<CognitoUser | null>(null);
-  
-  // --- THIS IS THE FIX (Part 1): Add state to trigger a refresh ---
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -86,11 +88,9 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
 
   const handleUserSelect = (user: CognitoUser) => {
     setSelectedUser(prevSelected => (prevSelected?.sub === user.sub ? null : user));
-    // Reset refresh key when user changes to avoid stale data display
     setRefreshKey(0); 
   };
   
-  // --- THIS IS THE FIX (Part 2): Create a handler to increment the refresh key ---
   const handleDataRefresh = () => {
     setRefreshKey(prevKey => prevKey + 1);
   };
@@ -156,12 +156,17 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
               Managing User: {getUserAttribute(selectedUser, 'custom:company_name') ?? getUserAttribute(selectedUser, 'email') ?? selectedUser.username}
             </Heading>
             <Flex direction="column" gap="large">
+              {/* --- THIS IS NEW (Part 2): Add the new statistics table component --- */}
+              <Card variation="elevated">
+                <Heading level={4} marginBottom="small">12 Month Statistics</Heading>
+                <MonthlyStatisticsTable userId={selectedUser.sub} />
+              </Card>
+
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
                 <ManageAccountStatus
                   selectedOwnerSub={selectedUser.sub}
                   targetUserName={getUserAttribute(selectedUser, 'custom:company_name') ?? selectedUser.username ?? selectedUser.sub}
-                  // --- THIS IS THE FIX (Part 3): Pass the callback down ---
                   onStatusUpdated={handleDataRefresh}
                 />
               </Card>
@@ -170,18 +175,16 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
                 <AddCashReceiptForm
                   selectedTargetSub={selectedUser.sub}
-                  // --- THIS IS THE FIX (Part 3): Pass the callback down ---
                   onCashReceiptAdded={handleDataRefresh}
                 />
               </Card>
 
               <Card variation="elevated" marginTop="medium">
-                <Heading level={4} marginBottom="small">Ledger Details</Heading>
+                <Heading level={4} marginBottom="small">Ledger Details (Current Month)</Heading>
                 <SalesLedger
                   targetUserId={selectedUser.sub}
                   isAdmin={true}
                   loggedInUser={loggedInUser}
-                  // --- THIS IS THE FIX (Part 4): Pass the key as a prop ---
                   refreshKey={refreshKey}
                 />
               </Card>
