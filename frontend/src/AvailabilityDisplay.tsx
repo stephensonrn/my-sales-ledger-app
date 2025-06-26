@@ -10,9 +10,15 @@ interface AvailabilityDisplayProps {
   currentAccountBalance: number;
 }
 
+// --- THIS IS THE FIX: Use Intl.NumberFormat for proper formatting ---
+const numberFormatter = new Intl.NumberFormat('en-GB', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
+
 const formatCurrency = (value: number | null | undefined) =>
   typeof value === 'number' && !isNaN(value)
-    ? value.toFixed(2)
+    ? numberFormatter.format(value)
     : '0.00';
 
 // A small component to create a consistent row for the calculation
@@ -40,19 +46,15 @@ function AvailabilityDisplay({
 
   return (
     <Card variation="outlined" padding="medium" marginBottom="medium">
-      {/* 1. Renamed Heading */}
       <Heading level={4} marginBottom="medium" textAlign="center">
         Availability Calculation
       </Heading>
       
-      {/* 2. Replaced Grid with a centered Flex column */}
       <Flex direction="column" alignItems="center" gap="xs">
         
-        {/* 3. Display figures in the correct order with updated labels */}
         <CalculationRow label="Sales Ledger Balance" value={currentSalesLedgerBalance} />
         <CalculationRow label="Unapproved Invoices" value={totalUnapprovedInvoiceValue} isSubtracted={true} />
         
-        {/* Divider to show the sub-total */}
         <Divider size="small" width="300px" />
         <CalculationRow label="Approved Sales Ledger" value={approvedSalesLedger} isBold={true} />
         <Divider size="small" width="300px" />
@@ -60,10 +62,8 @@ function AvailabilityDisplay({
         <CalculationRow label="Gross Availability (90%)" value={grossAvailability} />
         <CalculationRow label="Current Account Balance" value={currentAccountBalance} isSubtracted={true} />
         
-        {/* Divider for the final calculation */}
         <Divider size="large" width="300px" marginTop="small" marginBottom="small"/>
         
-        {/* Final Net Availability */}
         <Flex justifyContent="space-between" width="100%" maxWidth="300px">
             <Text fontWeight="bold" fontSize="large">Net Availability</Text>
             <Text fontSize="large" color="green.80" fontWeight="extrabold">
