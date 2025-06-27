@@ -1,8 +1,6 @@
 // FILE: src/App.tsx (Corrected)
-// ==========================================================
 
 import React from 'react';
-// --- THIS IS THE FIX (Part 2): Remove Amplify and configuration from this file ---
 import {
   Authenticator,
   Button,
@@ -20,8 +18,6 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 
 import './App.css';
 import aurumLogo from '/Aurum.png';
-
-// The Amplify.configure() block has been moved to main.tsx
 
 const components = {
   Header() {
