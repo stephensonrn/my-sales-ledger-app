@@ -1,6 +1,4 @@
-// FILE: src/SalesLedger.tsx (Corrected)
-// ==========================================================
-
+// src/SalesLedger.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -144,6 +142,24 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const grossAvailability = approvedSalesLedger * ADVANCE_RATE;
   const netAvailability = grossAvailability - currentAccountBalance;
 
+  // --- THIS IS THE FIX (Part 1): Create a helper to get the correct signed amount ---
+  const getSignedAmount = (transaction: LedgerEntry | CurrentAccountTransaction): number => {
+    const amount = transaction.amount || 0;
+    // Sales Ledger negative types
+    if (
+        transaction.type === LedgerEntryType.CREDIT_NOTE ||
+        transaction.type === LedgerEntryType.DECREASE_ADJUSTMENT ||
+        transaction.type === LedgerEntryType.CASH_RECEIPT
+    ) {
+        return -amount;
+    }
+    // Current Account negative types
+    if (transaction.__typename === 'CurrentAccountTransaction' && transaction.type === CurrentAccountTransactionType.CASH_RECEIPT) {
+        return -amount;
+    }
+    return amount;
+  };
+
   const downloadAsCSV = (data: (LedgerEntry | CurrentAccountTransaction)[], filename: string) => {
     if (!data || data.length === 0) {
         alert("No transactions to download.");
@@ -155,8 +171,9 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
         ...data.map(row => {
             const date = new Date(row.createdAt).toLocaleDateString('en-GB');
             const type = row.type.replace(/_/g, ' ');
-            const description = `"${row.description || ''}"`; 
-            const amount = row.amount;
+            const description = `"${row.description || ''}"`;
+            // --- THIS IS THE FIX (Part 2): Use the helper function here ---
+            const amount = getSignedAmount(row); 
             return [date, type, description, amount].join(',');
         })
     ];
@@ -289,7 +306,7 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
                 {
                     label: 'Documents',
                     value: 'documents',
-                    content: <DocumentManager />
+                    content: <DocumentManager userId={ownerSub} />
                 }
             ]}
         />
