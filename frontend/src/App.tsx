@@ -1,5 +1,4 @@
-// FILE: src/App.tsx (Corrected)
-
+// src/App.tsx
 import React from 'react';
 import {
   Authenticator,
@@ -9,6 +8,8 @@ import {
   Flex,
   useAuthenticator,
   Loader,
+  Text, // Import Text component
+  Icon, // Import Icon component
 } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 
@@ -18,6 +19,7 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 
 import './App.css';
 import aurumLogo from '/Aurum.png';
+import { MdEmail, MdPhone } from 'react-icons/md'; // Import icons
 
 const components = {
   Header() {
@@ -64,7 +66,9 @@ function AuthenticatedContent() {
     context.signOut,
   ]);
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
-  const displayName = user?.signInDetails?.loginId || user?.username || 'User';
+  
+  // --- THIS IS THE FIX (Part 1): Get the company name from user attributes ---
+  const companyName = user?.attributes?.['custom:company_name'] || user?.username || 'User';
 
   const isUserReady = !!(user && (user.attributes?.sub || user.userId));
 
@@ -80,10 +84,24 @@ function AuthenticatedContent() {
           paddingBottom: '10px',
         }}
       >
-        <Heading level={4}>Welcome {displayName}!</Heading>
-        <Button onClick={signOut} variation="primary" size="small">
-          Sign Out
-        </Button>
+        {/* --- THIS IS THE FIX (Part 2): Display company name --- */}
+        <Heading level={4}>{companyName}</Heading>
+        
+        <Flex direction="row" alignItems="center" gap="large">
+            {/* --- THIS IS THE FIX (Part 3): Add contact details --- */}
+            <Flex as="a" href="mailto:ross@aurumif.com" alignItems="center" gap="xs" style={{textDecoration: 'none', color: 'inherit'}}>
+                <Icon as={MdEmail} />
+                <Text>ross@aurumif.com</Text>
+            </Flex>
+            <Flex alignItems="center" gap="xs">
+                <Icon as={MdPhone} />
+                <Text>02477 298 113</Text>
+            </Flex>
+            <Button onClick={signOut} variation="primary" size="small">
+                Sign Out
+            </Button>
+        </Flex>
+
       </Flex>
 
       {adminCheckError && (
