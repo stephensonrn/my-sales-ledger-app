@@ -13,8 +13,8 @@ Amplify.configure({
     Cognito: {
       userPoolId: 'eu-west-1_i09IJ2ySB',
       userPoolClientId: '28889re05prqhvu9kr7g5jtdid',
-      // --- THIS IS THE FIX (Part 1): Update the Identity Pool ID ---
-      identityPoolId: 'StorageResourcesIdentityPoolIdOutput9FD92B67',
+      // --- THIS IS THE FIX (Part 1): Updated with the correct Identity Pool ID ---
+      identityPoolId: 'eu-west-1:29cc359b-f700-4d7a-b2c7-46724ca0fd10',
     }
   },
   API: {
@@ -26,8 +26,8 @@ Amplify.configure({
   },
   Storage: {
     S3: {
-      // --- THIS IS THE FIX (Part 2): Update the S3 Bucket Name ---
-      bucket: 'StorageResourcesStorageBucketNameOutput26F3A9CC',
+      // --- THIS IS THE FIX (Part 2): Updated with the correct S3 Bucket Name ---
+      bucket: 'salesledgerapp-backend-eu-storageresourcessalesled-rtys52eiwe9j',
       region: 'eu-west-1',
     }
   }
