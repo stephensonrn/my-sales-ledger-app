@@ -1,21 +1,11 @@
-// src/DocumentManager.tsx
+// FILE: src/DocumentManager.tsx (Updated)
+// ==========================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import {
-  View,
-  Text,
-  Loader,
-  Alert,
-  Button,
-  Flex,
-  Heading,
-  Card,
-  Icon,
-} from '@aws-amplify/ui-react';
-import { MdFileDownload } from 'react-icons/md'; // You may need to install react-icons: npm install react-icons
+import { View, Text, Loader, Alert, Button, Flex, Heading, Card, Icon } from '@aws-amplify/ui-react';
+import { MdFileDownload } from 'react-icons/md';
 
-// Define the new GraphQL operations here for clarity
 const getUploadUrl = /* GraphQL */ `
   mutation GetUploadUrl($filename: String!, $contentType: String!) {
     getUploadUrl(filename: $filename, contentType: $contentType) {
@@ -25,9 +15,10 @@ const getUploadUrl = /* GraphQL */ `
   }
 `;
 
+// --- THIS IS THE FIX (Part 1): Update the query to accept a userId variable ---
 const listMyFiles = /* GraphQL */ `
-  query ListMyFiles {
-    listMyFiles {
+  query ListMyFiles($userId: ID) {
+    listMyFiles(userId: $userId) {
       key
       url
       filename
@@ -48,7 +39,12 @@ const formatBytes = (bytes: number, decimals = 2) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-function DocumentManager() {
+// --- THIS IS THE FIX (Part 2): The component now accepts an optional userId for admin view ---
+interface DocumentManagerProps {
+    userId?: string | null; // For admins to view a specific user's files
+}
+
+function DocumentManager({ userId = null }: DocumentManagerProps) {
     const [files, setFiles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -58,15 +54,19 @@ function DocumentManager() {
         setLoading(true);
         setError(null);
         try {
-            const response = await client.graphql({ query: listMyFiles });
+            // --- THIS IS THE FIX (Part 3): Pass the userId as a variable ---
+            const response = await client.graphql({ 
+                query: listMyFiles,
+                variables: { userId } // Pass null for non-admins, pass the target ID for admins
+            });
             setFiles(response.data.listMyFiles || []);
         } catch (err) {
-            setError("Could not load documents. Please try refreshing.");
+            setError("Could not load documents.");
             console.error("Error listing files:", err);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [userId]);
 
     useEffect(() => {
         fetchFiles();
@@ -79,7 +79,6 @@ function DocumentManager() {
         setLoading(true);
         setError(null);
         try {
-            // 1. Get the pre-signed URL from our backend
             const getUrlResponse = await client.graphql({
                 query: getUploadUrl,
                 variables: { filename: file.name, contentType: file.type }
@@ -87,7 +86,6 @@ function DocumentManager() {
 
             const { uploadUrl } = getUrlResponse.data.getUploadUrl;
 
-            // 2. Upload the file directly to S3 using the secure URL
             const uploadResponse = await fetch(uploadUrl, {
                 method: 'PUT',
                 body: file,
@@ -97,14 +95,11 @@ function DocumentManager() {
             if (!uploadResponse.ok) {
                 throw new Error('Upload failed. Please check permissions and try again.');
             }
-
-            // 3. Refresh the file list to show the new file
             await fetchFiles();
-
         } catch (err: any) {
-            setError(err.message || "Upload failed. Please try again.");
-            console.error("Upload error:", err);
-            setLoading(false); // Stop loading on error
+            setError(err.message || "Upload failed.");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -120,9 +115,7 @@ function DocumentManager() {
             <Button onClick={() => fileInputRef.current?.click()} variation="primary" disabled={loading}>
                 {loading ? 'Processing...' : 'Upload New Document'}
             </Button>
-
             {error && <Alert variation="error" isDismissible onDismiss={() => setError(null)} marginTop="small">{error}</Alert>}
-            
             <View marginTop="large">
                 <Heading level={5} marginBottom="small">Uploaded Documents</Heading>
                 {loading && <Loader />}
@@ -146,5 +139,3 @@ function DocumentManager() {
         </View>
     );
 };
-
-export default DocumentManager;
