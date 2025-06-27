@@ -1,9 +1,19 @@
-// FILE: src/DocumentManager.tsx (Updated)
+// FILE: src/DocumentManager.tsx (Corrected)
 // ==========================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import { View, Text, Loader, Alert, Button, Flex, Heading, Card, Icon } from '@aws-amplify/ui-react';
+import {
+  View,
+  Text,
+  Loader,
+  Alert,
+  Button,
+  Flex,
+  Heading,
+  Card,
+  Icon,
+} from '@aws-amplify/ui-react';
 import { MdFileDownload } from 'react-icons/md';
 
 const getUploadUrl = /* GraphQL */ `
@@ -15,7 +25,6 @@ const getUploadUrl = /* GraphQL */ `
   }
 `;
 
-// --- THIS IS THE FIX (Part 1): Update the query to accept a userId variable ---
 const listMyFiles = /* GraphQL */ `
   query ListMyFiles($userId: ID) {
     listMyFiles(userId: $userId) {
@@ -37,11 +46,10 @@ const formatBytes = (bytes: number, decimals = 2) => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
+};
 
-// --- THIS IS THE FIX (Part 2): The component now accepts an optional userId for admin view ---
 interface DocumentManagerProps {
-    userId?: string | null; // For admins to view a specific user's files
+    userId?: string | null;
 }
 
 function DocumentManager({ userId = null }: DocumentManagerProps) {
@@ -54,14 +62,13 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
         setLoading(true);
         setError(null);
         try {
-            // --- THIS IS THE FIX (Part 3): Pass the userId as a variable ---
             const response = await client.graphql({ 
                 query: listMyFiles,
-                variables: { userId } // Pass null for non-admins, pass the target ID for admins
+                variables: { userId }
             });
             setFiles(response.data.listMyFiles || []);
         } catch (err) {
-            setError("Could not load documents.");
+            setError("Could not load documents. Please try refreshing.");
             console.error("Error listing files:", err);
         } finally {
             setLoading(false);
@@ -98,6 +105,7 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
             await fetchFiles();
         } catch (err: any) {
             setError(err.message || "Upload failed.");
+            console.error("Upload error:", err);
         } finally {
             setLoading(false);
         }
@@ -115,7 +123,9 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
             <Button onClick={() => fileInputRef.current?.click()} variation="primary" disabled={loading}>
                 {loading ? 'Processing...' : 'Upload New Document'}
             </Button>
+
             {error && <Alert variation="error" isDismissible onDismiss={() => setError(null)} marginTop="small">{error}</Alert>}
+            
             <View marginTop="large">
                 <Heading level={5} marginBottom="small">Uploaded Documents</Heading>
                 {loading && <Loader />}
@@ -139,3 +149,5 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
         </View>
     );
 };
+
+export default DocumentManager;

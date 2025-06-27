@@ -1,4 +1,4 @@
-// FILE: src/AdminPage.tsx (Updated)
+// FILE: src/AdminPage.tsx (Corrected)
 // ==========================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -23,7 +23,6 @@ import ManageAccountStatus from './ManageAccountStatus';
 import AddCashReceiptForm from './AddCashReceiptForm';
 import SalesLedger from './SalesLedger';
 import MonthlyStatisticsTable from './MonthlyStatisticsTable';
-// --- THIS IS THE FIX (Part 1): Import the new DocumentManager ---
 import DocumentManager from './DocumentManager';
 
 const USERS_PER_PAGE = 10;
@@ -46,7 +45,40 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
   }, []);
 
   const fetchUsers = useCallback(async (token: string | null = null) => {
-    // ... existing fetchUsers logic ...
+    if (!client) return;
+    setIsLoadingUsers(true);
+    setFetchError(null);
+
+    if (!token) {
+      setSelectedUser(null);
+      setUsers([]);
+    }
+
+    try {
+      const response = await client.graphql<AdminListUsersQuery>({
+        query: adminListUsers,
+        variables: { limit: USERS_PER_PAGE, nextToken: token },
+      });
+
+      const resultData = response.data?.adminListUsers;
+      const fetchedUsers = (resultData?.users?.filter(Boolean) as CognitoUser[]) || [];
+      const paginationToken = resultData?.nextToken ?? null;
+      
+      const loggedInUserId = loggedInUser.userId || loggedInUser.attributes?.sub;
+      const nonAdminUsers = fetchedUsers.filter(user => {
+          if (user.sub === loggedInUserId) return false;
+          const isAdminGroupMember = user.groups?.some(group => group?.toLowerCase() === 'admin');
+          return !isAdminGroupMember;
+      });
+
+      setUsers(prevUsers => token ? [...prevUsers, ...nonAdminUsers] : nonAdminUsers);
+      setNextToken(paginationToken);
+    } catch (err: any) {
+      const errorMessages = err.errors?.map((e: any) => e.message).join(', ') || err.message || 'Unknown error';
+      setFetchError(errorMessages);
+    } finally {
+      setIsLoadingUsers(false);
+    }
   }, [client, loggedInUser]);
 
   useEffect(() => {
@@ -69,13 +101,52 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
     return user.attributes.find(attr => attr?.name === attributeName)?.value ?? undefined;
   };
 
-  // ... existing styles ...
+  const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' };
+  const thTdStyle: React.CSSProperties = { border: '1px solid #ccc', padding: '8px', textAlign: 'left' };
+  const selectedRowStyle: React.CSSProperties = { backgroundColor: '#e6f7ff', fontWeight: 'bold' };
 
   return (
     <Flex direction="column" gap="large" padding="medium">
       <Heading level={2}>Admin Section</Heading>
       <Card variation="outlined">
-        {/* ... existing user list table ... */}
+        <Heading level={4} marginBottom="medium">Select User to Manage</Heading>
+         <View style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ccc', marginBottom: 'medium' }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thTdStyle}>Email</th>
+                <th style={thTdStyle}>Company Name</th>
+                <th style={thTdStyle}>Status</th>
+                <th style={thTdStyle}>Sub ID</th>
+                <th style={thTdStyle}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoadingUsers && (
+                <tr key="loader-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Loader /></td></tr>
+              )}
+              {!isLoadingUsers && users.length === 0 && !fetchError && (
+                <tr key="no-users-row"><td colSpan={5} style={{ ...thTdStyle, textAlign: 'center' }}><Text>No non-admin users found.</Text></td></tr>
+              )}
+              {users.map((user) => (
+                  <tr key={user.sub} style={selectedUser?.sub === user.sub ? selectedRowStyle : undefined}>
+                    <td style={thTdStyle}>{getUserAttribute(user, 'email') ?? user.username ?? '-'}</td>
+                    <td style={thTdStyle}>{getUserAttribute(user, 'custom:company_name') ?? '-'}</td>
+                    <td style={thTdStyle}><Badge variation={user.enabled ? 'success' : 'info'}>{user.status}</Badge></td>
+                    <td style={thTdStyle}><code>{user.sub}</code></td>
+                    <td style={thTdStyle}>
+                      <Button size="small" variation={selectedUser?.sub === user.sub ? 'primary' : 'link'} onClick={() => handleUserSelect(user)}>
+                        {selectedUser?.sub === user.sub ? 'Selected' : 'Select'}
+                      </Button>
+                    </td>
+                  </tr>
+              ))}
+            </tbody>
+          </table>
+        </View>
+        {nextToken && !isLoadingUsers && (
+          <Button onClick={() => fetchUsers(nextToken)} marginTop="small">Load More Users</Button>
+        )}
       </Card>
 
       <View marginTop="large">
@@ -89,7 +160,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                 <Heading level={4} marginBottom="small">12 Month Statistics</Heading>
                 <MonthlyStatisticsTable userId={selectedUser.sub} />
               </Card>
-
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Manage Account Status</Heading>
                 <ManageAccountStatus
@@ -98,7 +168,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                   onStatusUpdated={handleDataRefresh}
                 />
               </Card>
-
               <Card variation="elevated">
                 <Heading level={4} marginBottom="small">Add Cash Receipt</Heading>
                 <AddCashReceiptForm
@@ -106,7 +175,6 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                   onCashReceiptAdded={handleDataRefresh}
                 />
               </Card>
-
               <Card variation="elevated" marginTop="medium">
                 <Heading level={4} marginBottom="small">Ledger Details (Current Month)</Heading>
                 <SalesLedger
@@ -116,13 +184,10 @@ function AdminPage({ loggedInUser }: AdminPageProps) {
                   refreshKey={refreshKey}
                 />
               </Card>
-
-              {/* --- THIS IS THE FIX (Part 2): Add the DocumentManager for the selected user --- */}
               <Card variation="elevated" marginTop="medium">
                 <Heading level={4} marginBottom="small">User Documents</Heading>
                 <DocumentManager userId={selectedUser.sub} />
               </Card>
-
             </Flex>
           </>
         ) : (

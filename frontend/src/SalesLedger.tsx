@@ -1,4 +1,6 @@
-// src/SalesLedger.tsx
+// FILE: src/SalesLedger.tsx (Corrected)
+// ==========================================================
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { fetchUserAttributes } from 'aws-amplify/auth';
@@ -27,7 +29,6 @@ import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
 import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex } from '@aws-amplify/ui-react';
-// --- THIS IS THE FIX (Part 1): Import our new DocumentManager ---
 import DocumentManager from './DocumentManager';
 
 const ADVANCE_RATE = 0.9;
@@ -288,7 +289,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
                 {
                     label: 'Documents',
                     value: 'documents',
-                    // --- THIS IS THE FIX (Part 2): Use the new DocumentManager ---
                     content: <DocumentManager />
                 }
             ]}
