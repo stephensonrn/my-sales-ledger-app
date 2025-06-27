@@ -1,9 +1,9 @@
-// src/SalesLedger.tsx
+// FILE: src/SalesLedger.tsx (Cleaned Up)
+// ==========================================================
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { fetchUserAttributes } from 'aws-amplify/auth';
-// --- THIS IS NEW (Part 1): Import the Storage utility directly ---
-import { uploadData } from 'aws-amplify/storage';
 import {
   listLedgerEntries,
   listCurrentAccountTransactions,
@@ -28,7 +28,7 @@ import LedgerEntryForm from './LedgerEntryForm';
 import LedgerHistory from './LedgerHistory';
 import AvailabilityDisplay from './AvailabilityDisplay';
 import PaymentRequestForm from './PaymentRequestForm';
-import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex, Card } from '@aws-amplify/ui-react';
+import { Loader, Alert, View, Text, Heading, Tabs, Button, Flex } from '@aws-amplify/ui-react';
 import { StorageManager } from '@aws-amplify/ui-react-storage';
 
 const ADVANCE_RATE = 0.9;
@@ -51,10 +51,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
   const [drawdownLoading, setDrawdownLoading] = useState(false);
   const [drawdownError, setDrawdownError] = useState<string | null>(null);
   const [drawdownSuccess, setDrawdownSuccess] = useState<string | null>(null);
-
-  // --- THIS IS NEW (Part 2): State for the manual upload test ---
-  const [testFile, setTestFile] = useState<File | null>(null);
-  const [testUploadStatus, setTestUploadStatus] = useState('');
 
   const ownerSub = isAdmin ? targetUserId : (loggedInUser?.attributes?.sub || loggedInUser?.userId);
 
@@ -159,30 +155,63 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
     document.body.removeChild(link);
   };
 
-  const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => { /* ... existing code ... */ };
-  const handleRequestDrawdown = async (amount: number) => { /* ... existing code ... */ };
-
-  // --- THIS IS NEW (Part 3): Handler for the manual upload test ---
-  const handleManualUpload = async () => {
-    if (!testFile) {
-        setTestUploadStatus('Please choose a file first.');
-        return;
-    }
-    if (!ownerSub) {
-        setTestUploadStatus('Error: Cannot determine user folder.');
-        return;
-    }
-    setTestUploadStatus(`Uploading ${testFile.name}...`);
+  const handleAddLedgerEntry = async (newEntry: Pick<LedgerEntry, 'type' | 'amount' | 'description'>) => {
+    if (!loggedInUser) return;
     try {
-        const result = await uploadData({
-            path: `private/${ownerSub}/${testFile.name}`,
-            data: testFile,
-        }).result;
-        console.log('Manual upload success:', result);
-        setTestUploadStatus(`Success! File uploaded to: ${result.path}`);
-    } catch (error: any) {
-        console.error('Manual upload error:', error);
-        setTestUploadStatus(`Error: ${error.message}`);
+        const input: CreateLedgerEntryInput = {
+          amount: newEntry.amount || 0,
+          type: newEntry.type,
+          description: newEntry.description || ''
+        };
+        await client.graphql({ query: createLedgerEntry, variables: { input } });
+    } catch (err) {
+      setError("Failed to add ledger entry.");
+      console.error(err);
+    }
+  };
+
+  const handleRequestDrawdown = async (amount: number) => {
+    setDrawdownLoading(true);
+    setDrawdownError(null);
+    setDrawdownSuccess(null);
+    try {
+        const userAttributes = await fetchUserAttributes();
+        const ownerId = userAttributes.sub;
+        const companyName = userAttributes['custom:company_name'];
+        const userEmail = userAttributes.email;
+
+        if (!ownerId) {
+            throw new Error("Could not determine user ID for payment request.");
+        }
+        
+        const input: SendPaymentRequestInput = {
+            amount,
+            toEmail: ADMIN_EMAIL,
+            subject: `Payment Request from ${companyName || userEmail}`,
+            body: `User (${userEmail}) from company '${companyName || 'N/A'}' has requested a drawdown payment of £${amount.toFixed(2)}.`,
+            companyName: companyName,
+        };
+        await client.graphql({ query: sendPaymentRequestEmail, variables: { input } });
+        setDrawdownSuccess(`Your request for £${amount.toFixed(2)} has been sent successfully.`);
+
+        const newOptimisticTransaction: CurrentAccountTransaction = {
+            __typename: "CurrentAccountTransaction",
+            id: `local-${crypto.randomUUID()}`,
+            owner: ownerId,
+            type: CurrentAccountTransactionType.PAYMENT_REQUEST,
+            amount: amount,
+            description: "Payment Request (pending admin approval)",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+        
+        setCurrentAccountTransactions(prev => [newOptimisticTransaction, ...prev]);
+
+    } catch (err) {
+        setDrawdownError("Failed to send payment request. Please try again.");
+        console.error("Payment request failed:", err);
+    } finally {
+        setDrawdownLoading(false);
     }
   };
 
@@ -212,17 +241,6 @@ function SalesLedger({ loggedInUser, isAdmin = false, targetUserId = null, refre
                     value: 'documents',
                     content: (
                         <View paddingTop="medium">
-                            {/* --- THIS IS NEW (Part 4): The manual upload test UI --- */}
-                            <Card variation="outlined" marginBottom="large">
-                                <Heading level={5}>Manual Upload Test</Heading>
-                                <Flex direction="column" gap="small" marginTop="small">
-                                    <input type="file" onChange={(e) => setTestFile(e.target.files ? e.target.files[0] : null)} />
-                                    <Button onClick={handleManualUpload}>Upload Test File</Button>
-                                    {testUploadStatus && <Text>{testUploadStatus}</Text>}
-                                </Flex>
-                            </Card>
-
-                            <Heading level={5} marginBottom="small">File Cabinet</Heading>
                             <StorageManager
                                 path={`private/${ownerSub}/`}
                                 maxFileCount={10}
