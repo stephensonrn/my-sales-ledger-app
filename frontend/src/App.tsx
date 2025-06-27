@@ -1,5 +1,5 @@
 // src/App.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react'; // Import useState and useEffect
 import {
   Authenticator,
   Button,
@@ -8,10 +8,11 @@ import {
   Flex,
   useAuthenticator,
   Loader,
-  Text, // Import Text component
-  Icon, // Import Icon component
+  Text,
+  Icon,
 } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
+import { fetchUserAttributes } from 'aws-amplify/auth'; // Import fetchUserAttributes
 
 import SalesLedger from './SalesLedger';
 import AdminPage from './AdminPage';
@@ -19,7 +20,7 @@ import { useAdminAuth } from './hooks/useAdminAuth';
 
 import './App.css';
 import aurumLogo from '/Aurum.png';
-import { MdEmail, MdPhone } from 'react-icons/md'; // Import icons
+import { MdEmail, MdPhone } from 'react-icons/md';
 
 const components = {
   Header() {
@@ -67,8 +68,25 @@ function AuthenticatedContent() {
   ]);
   const { isAdmin, isLoading: isAdminLoading, error: adminCheckError } = useAdminAuth();
   
-  // --- THIS IS THE FIX (Part 1): Get the company name from user attributes ---
-  const companyName = user?.attributes?.['custom:company_name'] || user?.username || 'User';
+  // --- THIS IS THE FIX (Part 1): Add state for the company name ---
+  const [companyName, setCompanyName] = useState<string | null>(null);
+
+  // --- THIS IS THE FIX (Part 2): Fetch attributes when the user object is available ---
+  useEffect(() => {
+    const getAttributes = async () => {
+        try {
+            const attributes = await fetchUserAttributes();
+            setCompanyName(attributes['custom:company_name'] || user?.username || 'User');
+        } catch (e) {
+            // Fallback to username if attributes can't be fetched
+            setCompanyName(user?.username || 'User');
+        }
+    };
+
+    if (user) {
+        getAttributes();
+    }
+  }, [user]); // This effect runs whenever the user object changes
 
   const isUserReady = !!(user && (user.attributes?.sub || user.userId));
 
@@ -84,11 +102,10 @@ function AuthenticatedContent() {
           paddingBottom: '10px',
         }}
       >
-        {/* --- THIS IS THE FIX (Part 2): Display company name --- */}
-        <Heading level={4}>{companyName}</Heading>
+        {/* --- THIS IS THE FIX (Part 3): Display the company name from state --- */}
+        <Heading level={4}>{companyName || <Loader size="small" />}</Heading>
         
         <Flex direction="row" alignItems="center" gap="large">
-            {/* --- THIS IS THE FIX (Part 3): Add contact details --- */}
             <Flex as="a" href="mailto:ross@aurumif.com" alignItems="center" gap="xs" style={{textDecoration: 'none', color: 'inherit'}}>
                 <Icon as={MdEmail} />
                 <Text>ross@aurumif.com</Text>
