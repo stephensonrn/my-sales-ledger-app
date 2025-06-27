@@ -1,7 +1,5 @@
-// FILE: src/DocumentManager.tsx (Corrected)
-// ==========================================================
-
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// src/DocumentManager.tsx
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import {
   View,
@@ -53,10 +51,13 @@ interface DocumentManagerProps {
 }
 
 function DocumentManager({ userId = null }: DocumentManagerProps) {
-    const [files, setFiles] = useState<any[]>([]);
+    const [allFiles, setAllFiles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // --- THIS IS NEW (Part 1): State to control the view ---
+    const [showAll, setShowAll] = useState(false);
 
     const fetchFiles = useCallback(async () => {
         setLoading(true);
@@ -66,7 +67,8 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
                 query: listMyFiles,
                 variables: { userId }
             });
-            setFiles(response.data.listMyFiles || []);
+            // Store the complete list of files
+            setAllFiles(response.data.listMyFiles || []);
         } catch (err) {
             setError("Could not load documents. Please try refreshing.");
             console.error("Error listing files:", err);
@@ -78,6 +80,22 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
     useEffect(() => {
         fetchFiles();
     }, [fetchFiles]);
+
+    // --- THIS IS NEW (Part 2): Memoized filter to get the files to display ---
+    const displayedFiles = useMemo(() => {
+        if (showAll) {
+            return allFiles; // Show all files if toggled
+        }
+        // Otherwise, filter for the current month
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+
+        return allFiles.filter(file => {
+            const fileDate = new Date(file.lastModified);
+            return fileDate.getFullYear() === currentYear && fileDate.getMonth() === currentMonth;
+        });
+    }, [allFiles, showAll]);
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -105,7 +123,6 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
             await fetchFiles();
         } catch (err: any) {
             setError(err.message || "Upload failed.");
-            console.error("Upload error:", err);
         } finally {
             setLoading(false);
         }
@@ -127,10 +144,23 @@ function DocumentManager({ userId = null }: DocumentManagerProps) {
             {error && <Alert variation="error" isDismissible onDismiss={() => setError(null)} marginTop="small">{error}</Alert>}
             
             <View marginTop="large">
-                <Heading level={5} marginBottom="small">Uploaded Documents</Heading>
+                <Flex justifyContent="space-between" alignItems="center">
+                    <Heading level={5} marginBottom="small">
+                        {showAll ? "All Uploaded Documents" : "This Month's Documents"}
+                    </Heading>
+                    {/* --- THIS IS NEW (Part 3): Toggle button --- */}
+                    <Button onClick={() => setShowAll(!showAll)} size="small" variation="link">
+                        {showAll ? "Show Current Month" : "Show All"}
+                    </Button>
+                </Flex>
+
                 {loading && <Loader />}
-                {!loading && files.length === 0 && <Text>No documents uploaded.</Text>}
-                {!loading && files.map(file => (
+                {!loading && displayedFiles.length === 0 && (
+                    <Text>
+                        {showAll ? "No documents have been uploaded." : "No documents uploaded this month."}
+                    </Text>
+                )}
+                {!loading && displayedFiles.map(file => (
                     <Card key={file.key} variation="outlined" marginBottom="small">
                         <Flex justifyContent="space-between" alignItems="center">
                             <Flex direction="column">
